@@ -1,0 +1,34 @@
+type User {
+  id: String!
+  name: String!
+  email: String!
+}
+
+type Book {
+  id: String!
+  title: String!
+  author: String!
+  available: Boolean!
+}
+
+type Borrow {
+  id: String!
+  userId: String!
+  bookId: String!
+  status: String!
+}
+
+type Query {
+  users: [User]
+  user(id: String!): User
+
+  books: [Book]
+  book(id: String!): Book
+
+  borrows: [Borrow]
+}
+
+type Mutation {
+  createUser(name: String!, email: String!): User
+   deleteUser(id: ID!): Boolean
+}

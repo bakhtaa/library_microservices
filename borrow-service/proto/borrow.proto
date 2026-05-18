@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package borrow;
+
+service BorrowService {
+  rpc BorrowBook (BorrowRequest) returns (BorrowResponse);
+  rpc ReturnBook (ReturnRequest) returns (BorrowResponse);
+  rpc GetUserBorrows (UserRequest) returns (BorrowListResponse);
+}
+
+message Borrow {
+  string id = 1;
+  string userId = 2;
+  string bookId = 3;
+  string status = 4; // BORROWED / RETURNED
+}
+
+message BorrowRequest {
+  string userId = 1;
+  string bookId = 2;
+}
+
+message ReturnRequest {
+  string userId = 1;
+  string bookId = 2;
+}
+
+message UserRequest {
+  string userId = 1;
+}
+
+message BorrowResponse {
+  bool success = 1;
+  string message = 2;
+  Borrow borrow = 3;
+}
+
+message BorrowListResponse {
+  repeated Borrow borrows = 1;
+}
