@@ -295,6 +295,5 @@ Implemented features currently include:
 
 ## Authors
 Nairouz Bakhta Ben Hadj Slama
-Library Microservices Project
-Node.js Microservices Architecture
+
 
