@@ -1,0 +1,1 @@
+//rôle: Contient la logique métier

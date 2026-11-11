@@ -1,0 +1,1 @@
+//rôle : Exécute les requêtes SQL
