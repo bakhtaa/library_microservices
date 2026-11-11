@@ -30,6 +30,7 @@ message CreateUserRequest {
 message GetUsersRequest {
   int32 page_size = 1;
   string page_token = 2;
+  //page_token permet de savoir où reprendre la récupération des données lorsqu'on passe à la page suivante.
 }
 
 message UserResponse {
