@@ -1,8 +1,8 @@
 //	Démarre le serveur gRPC
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
-const path = require("path");
-const sqlite3 = require("sqlite3").verbose();
+
+
 const { randomUUID } = require("crypto");
 /*const {
 connectProducer,
@@ -23,15 +23,7 @@ const packageDef = protoLoader.loadSync(
 const userProto = grpc.loadPackageDefinition(packageDef).user;
 
 
-const db = new sqlite3.Database("db.sqlite");
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    email TEXT
-  )
-`);
 
 
 const userService = {

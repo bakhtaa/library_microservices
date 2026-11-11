@@ -1,1 +1,0 @@
-// rôle : 	Définit la structure d'un utilisateur
