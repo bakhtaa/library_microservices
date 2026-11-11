@@ -102,6 +102,13 @@ async function main() {
 
       await borrow.patch({ status: "RETURNED" });
 
+       /*await sendEvent(
+   "BOOK_RETURNED",
+   {
+      borrowId:id
+   }
+);*/
+
       return callback(null, {
         success: true,
         message: "Book returned successfully"
@@ -115,12 +122,7 @@ async function main() {
         selector: { userId }
       }).exec();
 
-      /*await sendEvent(
-   "BOOK_RETURNED",
-   {
-      borrowId:id
-   }
-);*/
+    
 
       callback(null, {
         borrows: borrows.map(b => b.toJSON())

@@ -4,9 +4,11 @@ package user;
 
 service UserService {
   rpc GetUser (UserRequest) returns (UserResponse);
-  rpc GetUsers (Empty) returns (UsersResponse);
+  rpc GetUsers (GetUsersRequest) returns (UsersResponse);
   rpc CreateUser (CreateUserRequest) returns (UserResponse);
   rpc DeleteUser (UserRequest) returns (DeleteResponse);
+  rpc UpdateUser (UpdateUserRequest) returns (UserResponse);
+ 
 }
 
 message User {
@@ -24,6 +26,12 @@ message CreateUserRequest {
   string email = 2;
 }
 
+
+message GetUsersRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
 message UserResponse {
   User user = 1;
 }
@@ -35,5 +43,9 @@ message UsersResponse {
 message DeleteResponse {
   bool success = 1;
 }
-
+message UpdateUserRequest {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
 message Empty {}
