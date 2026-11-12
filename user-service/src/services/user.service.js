@@ -1,36 +1,33 @@
-//rôle: Contient la logique métier
+
+// Rôle : Contient la logique métier
 
 const userRepository = require("../repositories/user.repository");
 const { randomUUID } = require("crypto");
 
-function getUser(id, callback) {
-    userRepository.findById(id, callback);
+async function getUser(id) {
+    return userRepository.findById(id);
 }
 
-function getUsers(callback) {
-    userRepository.findAll(callback);
+async function getUsers() {
+    return userRepository.findAll();
 }
 
-function createUser(data, callback) {
+async function createUser(data) {
     const user = {
         id: randomUUID(),
         name: data.name,
         email: data.email
     };
 
-    userRepository.create(user, (err) => {
-        if (err) return callback(err);
+    await userRepository.create(user);
 
-        callback(null, user);
-    });
+    return user;
 }
 
-function deleteUser(id, callback) {
-    userRepository.deleteById(id, (err, changes) => {
-        if (err) return callback(err);
+async function deleteUser(id) {
+    const changes = await userRepository.deleteById(id);
 
-        callback(null, changes > 0);
-    });
+    return changes > 0;
 }
 
 module.exports = {
