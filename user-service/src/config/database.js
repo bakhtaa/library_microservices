@@ -1,20 +1,30 @@
-//rôle : 	Initialise la connexion SQLite
+
+// Rôle : Initialiser la connexion SQLite et créer la table users
 
 const path = require("path");
 const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
 
-const db = await open({
-    filename: "./db.sqlite",
+const dbPromise = open({
+    filename: path.join(__dirname, "../../db.sqlite"),
     driver: sqlite3.Database
 });
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    email TEXT
-  )
-`);
+async function initializeDatabase() {
+    const db = await dbPromise;
 
-module.exports = db;
+    await db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            email TEXT
+        )
+    `);
+
+    console.log("Database initialized successfully");
+}
+
+module.exports = {
+    dbPromise,
+    initializeDatabase
+};

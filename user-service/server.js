@@ -1,93 +1,46 @@
-//	Démarre le serveur gRPC
+
+// Rôle : Démarrer et configurer le serveur gRPC
+
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
+const path = require("path");
 
+const userHandler = require("./src/grpc/user.handler");
 
-const { randomUUID } = require("crypto");
-/*const {
-connectProducer,
-sendEvent
-}=require("../kafka/producer"); */
-
+// Chargement du contrat Protobuf
 const packageDef = protoLoader.loadSync(
-  path.join(__dirname, "proto/user.proto"),
-  {
-    keepCase: true,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true
-  }
+    path.join(__dirname, "proto/user.proto"),
+    {
+        keepCase: true,
+        longs: String,
+        enums: String,
+        defaults: true,
+        oneofs: true
+    }
 );
 
+// Chargement du package User
 const userProto = grpc.loadPackageDefinition(packageDef).user;
 
-
-
-
-
-const userService = {
-  GetUser: (call, callback) => {
-    db.get(
-      "SELECT * FROM users WHERE id = ?",
-      [call.request.id],
-      (err, row) => {
-        callback(null, { user: row });
-      }
-    );
-  },
-
-  GetUsers: (_, callback) => {
-    db.all("SELECT * FROM users", [], (err, rows) => {
-      callback(null, { users: rows });
-    });
-  },
-
-
-  CreateUser: (call, callback) => {
-    const id = randomUUID();
-    const { name, email } = call.request;
-
-    db.run(
-      "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-      [id, name, email],
-
-      async function () {
-
-        /*await sendEvent(
-          "USER_CREATED",
-          { id, name, email }
-        );*/
-
-        callback(null, {
-          user: { id, name, email }
-        });
-
-      }
-    );
-},
-
-  DeleteUser: (call, callback) => {
-    db.run(
-      "DELETE FROM users WHERE id = ?",
-      [call.request.id],
-      function () {
-        callback(null, { success: this.changes > 0 });
-      }
-    );
-  }
-};
-
-
+// Création du serveur gRPC
 const server = new grpc.Server();
 
-server.addService(userProto.UserService.service, userService);
+// Association du contrat Protobuf avec son Handler
+server.addService(
+    userProto.UserService.service,
+    userHandler
+);
 
+// Démarrage du serveur
 server.bindAsync(
-  "0.0.0.0:50051",
-  grpc.ServerCredentials.createInsecure(),
-  () => {
-    console.log("👤 User Service running on port 50051");
-    server.start();
-  }
+    "0.0.0.0:50051",
+    grpc.ServerCredentials.createInsecure(),
+    (error, port) => {
+        if (error) {
+            console.error("Erreur lors du démarrage :", error);
+            return;
+        }
+
+        console.log(`👤 User Service running on port ${port}`);
+    }
 );

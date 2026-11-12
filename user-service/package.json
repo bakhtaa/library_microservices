@@ -16,7 +16,9 @@
     "start:books": "cd book-service && node server.js",
     "start:borrows": "cd borrow-service && node server.js",
     "start:notif": "cd notification-service && node consumer.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+
   },
   "main": "db.js",
   "dependencies": {
