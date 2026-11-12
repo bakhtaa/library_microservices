@@ -1,7 +1,7 @@
 
 // Rôle : exécuter les requêtes SQL liées aux utilisateurs
 
-const dbPromise = require("../config/database");
+const { dbPromise } = require("../config/database");
 
 async function findById(id) {
     const db = await dbPromise;
