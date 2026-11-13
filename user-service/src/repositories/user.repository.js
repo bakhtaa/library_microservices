@@ -15,14 +15,20 @@ async function findById(id) {
 async function findAll(status) {
     const db = await dbPromise;
 
+    let users;
+
     if (!status || status === "ACCOUNT_STATUS_UNSPECIFIED") {
-        return db.all("SELECT * FROM users");
+        users = await db.all("SELECT * FROM users");
+    } else {
+        users = await db.all(
+            "SELECT * FROM users WHERE account_status = ?",
+            [status]
+        );
     }
 
-    return db.all(
-        "SELECT * FROM users WHERE account_status = ?",
-        [status]
-    );
+    console.log("USERS FROM DATABASE:", users);
+
+    return users;
 }
 
 async function create(user) {

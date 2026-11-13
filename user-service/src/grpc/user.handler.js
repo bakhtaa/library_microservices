@@ -19,17 +19,20 @@ const userHandler = {
     },
 
     GetUsers: async (call, sendResponse) => {
-        try {
-            const users = await userService.getUsers(call.request);
-            sendResponse(null, { users });
+    try {
+        const users = await userService.getUsers(call.request);
 
-        } catch (error) {
-            sendResponse({
-                code: 13,
-                message: error.message
-            });
-        }
-    },
+        console.log("USERS FROM HANDLER:", users);
+
+        sendResponse(null, { users });
+
+    } catch (error) {
+        sendResponse({
+            code: 13,
+            message: error.message
+        });
+    }
+},
 
     CreateUser: async (call, sendResponse) => {
         try {

@@ -5,6 +5,7 @@ const userRepository = require("../repositories/user.repository");
 const { randomUUID } = require("crypto");
 
 async function getUser(id) {
+       
     return userRepository.findById(id);
 }
 
