@@ -1051,58 +1051,6 @@ Ces logs facilitent le diagnostic lorsqu'une opération distribuée échoue.
 
 ---
 
-## 12. Ordre de développement recommandé
-
-Pour développer Borrow Service progressivement et tester chaque fonctionnalité :
-
-### Phase 1 — Structure du microservice
-
-- Créer le dossier `borrow-service`.
-- Initialiser le projet Node.js.
-- Installer les dépendances nécessaires.
-- Définir le fichier `borrow.proto`.
-- Configurer le serveur gRPC.
-- Configurer la base de données de Borrow Service.
-
-### Phase 2 — Fonctionnalité d'emprunt
-
-- Implémenter le repository.
-- Implémenter le service métier.
-- Implémenter le handler gRPC.
-- Communiquer avec User Service.
-- Communiquer avec Book Service.
-- Ajouter la réservation atomique.
-- Enregistrer l'emprunt.
-- Tester les cas d'erreur et les accès concurrents.
-
-### Phase 3 — Fonctionnalité de retour
-
-- Vérifier l'emprunt.
-- Implémenter l'état `RETURN_PENDING`.
-- Communiquer avec Book Service.
-- Rendre le livre disponible.
-- Confirmer le retour.
-- Gérer les erreurs et les reprises.
-
-### Phase 4 — Fiabilité distribuée
-
-- Ajouter les identifiants d'opération.
-- Ajouter l'idempotence.
-- Ajouter les timeouts et retries.
-- Ajouter les mécanismes de compensation Saga.
-- Ajouter la récupération des opérations incomplètes.
-
-### Phase 5 — Kafka et notifications
-
-- Configurer Kafka.
-- Créer le topic `borrow-events`.
-- Implémenter la publication de `BORROW_RETURNED`.
-- Ajouter la table Outbox.
-- Implémenter le processus de publication.
-- Développer Notification Service comme consommateur.
-- Tester les événements dupliqués et les indisponibilités de Kafka.
-
----
 
 ## Conclusion
 
