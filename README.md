@@ -308,14 +308,820 @@ Cette architecture établit une séparation claire entre l'accès externe à l'A
 
 L'API Gateway fournit une interface unifiée, GraphQL permet une récupération et une agrégation flexibles des données, tandis que gRPC assure une communication structurée entre les services distribués.
 
-La prochaine étape consiste à examiner la répartition des responsabilités entre les différents microservices et la manière dont la propriété des données est organisée.
+# Borrow Service — Architecture et fonctionnement
+
+## 1. Présentation générale
+
+Le **Borrow Service** est le microservice responsable de la gestion des emprunts et des retours de livres dans notre architecture de bibliothèque basée sur les microservices.
+
+Il coordonne les opérations entre les différents services afin de garantir que les règles métier liées aux emprunts soient respectées.
+
+Il communique principalement avec :
+
+- **User Service** : pour vérifier l'existence et le statut d'un utilisateur.
+- **Book Service** : pour vérifier la disponibilité d'un livre, le réserver ou le rendre disponible.
+- **Notification Service** : pour informer les utilisateurs des événements importants, notamment lorsqu'un livre qu'ils attendent est retourné.
+- **Kafka** : pour diffuser les événements métier de manière asynchrone.
+
+### 1.1. Responsabilités de Borrow Service
+
+Borrow Service est responsable de :
+
+- L'enregistrement des emprunts.
+- L'enregistrement des retours.
+- La gestion des dates d'emprunt et des dates prévues de retour.
+- La vérification de l'état d'un emprunt.
+- La gestion des règles métier liées aux emprunts.
+- La coordination des opérations entre User Service et Book Service.
+- La publication des événements liés aux emprunts et aux retours.
+
+Il possède sa propre base de données et ne doit jamais accéder directement aux bases de données des autres microservices.
+
+Chaque service reste propriétaire de ses propres données.
 
 ---
+
+## 2. Architecture et communication entre les services
+
+Nous utilisons deux mécanismes de communication :
+
+### 2.1. gRPC — Communication synchrone
+
+gRPC est utilisé lorsqu'un service doit appeler directement un autre service et obtenir une réponse immédiate.
+
+Exemples :
+
+- Vérifier si un utilisateur existe.
+- Vérifier si un livre existe.
+- Vérifier la disponibilité d'un livre.
+- Réserver un livre.
+- Rendre un livre disponible.
+
+Le service appelant attend la réponse avant de poursuivre son traitement.
+
+### 2.2. Kafka — Communication asynchrone
+
+Kafka est utilisé pour diffuser des événements métier lorsqu'une opération importante a été réalisée.
+
+Exemple :
+
+Lorsqu'un livre est retourné et que sa disponibilité a été mise à jour, Borrow Service publie un événement `BORROW_RETURNED`.
+
+Notification Service consomme cet événement et peut informer les utilisateurs intéressés par ce livre.
+
+Borrow Service n'a donc pas besoin de connaître les détails de l'envoi des notifications.
+
+### 2.3. Vue globale
+
+```text
+                     Frontend
+                         |
+                         v
+                    API Gateway
+                         |
+                         v
+                   Borrow Service
+                    /          \
+                   /            \
+                gRPC            gRPC
+                 /                \
+                v                  v
+           User Service       Book Service
+                                  |
+                                  v
+                            Book Database
+
+                   Borrow Service
+                         |
+                         v
+                       Kafka
+                         |
+                         v
+                 Notification Service
+                         |
+                         v
+                  User Notification
+```
+
+---
+
+## 3. Workflow 1 : Emprunter un livre
+
+### 3.1. Objectif
+
+Lorsqu'un utilisateur souhaite emprunter un livre, Borrow Service coordonne les vérifications nécessaires avant d'enregistrer l'emprunt.
+
+Le processus comprend trois grandes opérations :
+
+1. Vérifier l'utilisateur.
+2. Vérifier et réserver le livre.
+3. Enregistrer l'emprunt.
+
+### 3.2. Étape 1 — Vérifier l'utilisateur
+
+Borrow Service communique avec User Service via gRPC.
+
+Il vérifie :
+
+- Si l'utilisateur existe.
+- Si son compte est actif (`ACTIVE`).
+
+Trois situations sont possibles :
+
+| Situation | Action |
+|---|---|
+| Utilisateur inexistant | Refuser l'emprunt et inviter l'utilisateur à créer un compte. |
+| Compte suspendu ou inactif | Refuser l'emprunt et expliquer la raison. |
+| Compte actif | Continuer le processus. |
+
+L'identité et le statut du compte sont gérés par User Service. Borrow Service ne doit pas reproduire ces informations dans sa propre base de données.
+
+### 3.3. Étape 2 — Vérifier et réserver le livre
+
+Borrow Service communique avec Book Service via gRPC.
+
+Il faut distinguer trois situations :
+
+| Situation | Action |
+|---|---|
+| Le livre n'existe pas | Informer l'utilisateur que le livre est absent du catalogue. |
+| Le livre est disponible | Procéder à sa réservation. |
+| Le livre est déjà emprunté | Rechercher la date prévue de retour dans Borrow Service. |
+
+Si le livre est déjà emprunté, Borrow Service peut consulter son propre historique des emprunts actifs afin de retrouver la date prévue de retour.
+
+Il peut alors informer l'utilisateur :
+
+> Ce livre est actuellement emprunté. Sa date prévue de retour est le 20 novembre 2026.
+
+Cette date est une date prévisionnelle : le retour réel peut être effectué plus tôt ou plus tard.
+
+### 3.4. Étape 3 — Enregistrer l'emprunt
+
+Si le livre est disponible et que l'opération de réservation réussit, Borrow Service enregistre un nouvel emprunt dans sa propre base de données.
+
+Un emprunt peut contenir les attributs suivants :
+
+| Attribut | Description |
+|---|---|
+| `id` | Identifiant unique de l'emprunt. |
+| `user_id` | Identifiant de l'utilisateur. |
+| `book_id` | Identifiant du livre. |
+| `borrowed_at` | Date réelle de l'emprunt. |
+| `due_date` | Date prévue de retour. |
+| `returned_at` | Date réelle de retour, initialement NULL. |
+| `status` | État de l'emprunt. |
+
+Exemples de statuts :
+
+- `ACTIVE` : emprunt en cours.
+- `RETURN_PENDING` : retour en cours de traitement.
+- `RETURNED` : livre retourné.
+
+L'enregistrement de l'emprunt doit être effectué dans une transaction locale à la base de données de Borrow Service.
+
+### 3.5. Séquence complète de l'emprunt
+
+```text
+Frontend
+   |
+   v
+API Gateway
+   |
+   v
+Borrow Service
+   |
+   |--- gRPC ---> User Service
+   |                |
+   |<--------------|
+   |   User ACTIVE
+   |
+   |--- gRPC ---> Book Service
+   |                |
+   |                | Vérifier disponibilité
+   |                | Réserver atomiquement
+   |<--------------|
+   |   Réservation réussie
+   |
+   |--- Enregistrer l'emprunt
+   |    dans Borrow Database
+   |
+   v
+Confirmation de l'emprunt
+```
+
+---
+
+## 4. Gestion de la concurrence pendant un emprunt
+
+### 4.1. Le problème
+
+Imaginons qu'il ne reste qu'un seul exemplaire disponible d'un livre.
+
+Deux utilisateurs souhaitent l'emprunter presque simultanément.
+
+Si nous effectuons simplement une vérification suivie d'une mise à jour, nous risquons d'obtenir :
+
+```text
+Utilisateur A                 Utilisateur B
+     |                              |
+     v                              v
+Vérifier disponibilité       Vérifier disponibilité
+     |                              |
+     v                              v
+  AVAILABLE                    AVAILABLE
+     |                              |
+     v                              v
+  Emprunter                     Emprunter
+```
+
+Les deux utilisateurs peuvent croire que le livre leur a été attribué.
+
+Il s'agit d'une **condition de concurrence (race condition)**.
+
+### 4.2. Solution : réservation atomique dans Book Service
+
+La vérification de disponibilité et le changement de statut doivent être réalisés dans une seule opération atomique.
+
+Borrow Service ne doit donc pas effectuer :
+
+```text
+1. Vérifier si le livre est disponible.
+2. Puis demander à Book Service de le réserver.
+```
+
+Il doit plutôt appeler une opération gRPC dédiée :
+
+```protobuf
+rpc BorrowBook(BorrowBookRequest)
+    returns (BorrowBookResponse);
+```
+
+Book Service réalise ensuite une mise à jour conditionnelle :
+
+```sql
+UPDATE books
+SET status = 'BORROWED'
+WHERE id = ?
+AND status = 'AVAILABLE';
+```
+
+Puis il vérifie le nombre de lignes modifiées.
+
+- Si `changes = 1`, la réservation a réussi.
+- Si `changes = 0`, le livre n'est plus disponible ou n'existe pas.
+
+Cette opération doit être exécutée dans une transaction de la base de données de Book Service, avec les contraintes et le niveau d'isolation adaptés au moteur utilisé.
+
+Ainsi, même si deux requêtes arrivent simultanément, une seule peut réserver le dernier exemplaire.
+
+**Principe essentiel : Book Service est le seul propriétaire de la disponibilité des livres.**
+
+Pour une bibliothèque qui gère plusieurs exemplaires d'un même titre, il faudra également gérer la disponibilité au niveau de chaque exemplaire ou d'un stock atomique, et non simplement au niveau du titre.
+
+---
+
+## 5. Gestion des échecs pendant un emprunt
+
+Les microservices possèdent des bases de données indépendantes. Une transaction SQL classique ne peut donc pas englober automatiquement les modifications de plusieurs services.
+
+Il faut prévoir les scénarios d'échec.
+
+### Scénario 1 — User Service indisponible
+
+Borrow Service ne peut pas vérifier l'utilisateur.
+
+**Action :**
+- Ne pas continuer l'emprunt.
+- Retourner une erreur temporaire au client.
+- Prévoir une nouvelle tentative contrôlée.
+
+Il ne faut surtout pas considérer automatiquement l'utilisateur comme valide.
+
+### Scénario 2 — Book Service indisponible
+
+Borrow Service ne peut pas confirmer la disponibilité ni réserver le livre.
+
+**Action :**
+- Ne pas enregistrer un emprunt confirmé.
+- Retourner une erreur temporaire.
+- Réessayer éventuellement après un délai.
+
+### Scénario 3 — Le livre est réservé, mais l'enregistrement de l'emprunt échoue
+
+C'est un cas important.
+
+```text
+Book Service :
+Livre = BORROWED
+
+Borrow Service :
+Échec de l'enregistrement
+```
+
+Le système devient incohérent : le livre est réservé, mais aucun emprunt correspondant n'existe.
+
+**Solution : opération de compensation Design Pattern(Saga).**
+
+Borrow Service doit demander à Book Service d'annuler la réservation.
+
+Par exemple :
+
+```protobuf
+rpc CancelReservation(ReservationRequest)
+    returns (ReservationResponse);
+```
+
+Book Service remet le livre à disposition uniquement si la réservation correspond bien à l'opération concernée.
+
+La compensation doit être idempotente : l'exécuter plusieurs fois ne doit pas produire d'effets incorrects.
+
+Pour une meilleure fiabilité, on peut également enregistrer une opération de réservation avec un identifiant unique et un état temporaire, puis prévoir un mécanisme de reprise des opérations incomplètes.
+
+---
+
+## 6. Workflow 2 : Retourner un livre
+
+### 6.1. Objectif
+
+Lorsqu'un utilisateur retourne un livre, deux services doivent intervenir :
+
+- Borrow Service : enregistrer le retour.
+- Book Service : rendre le livre disponible.
+
+Une fois le retour confirmé, les autres services intéressés peuvent être informés grâce à Kafka.
+
+### 6.2. Étape 1 — Vérifier l'emprunt
+
+Borrow Service vérifie dans sa propre base de données :
+
+- Si l'emprunt existe.
+- Si l'emprunt appartient au bon utilisateur, lorsque cette vérification est nécessaire.
+- Si l'emprunt est toujours actif.
+
+Si l'emprunt n'existe pas, le retour est refusé.
+
+S'il est déjà retourné, on ne doit pas effectuer une deuxième opération de retour.
+
+### 6.3. Étape 2 — Enregistrer le retour en cours
+
+Borrow Service peut faire passer l'emprunt à l'état :
+
+```text
+RETURN_PENDING
+```
+
+Cet état indique que le retour a commencé, mais que la remise à disposition du livre n'a pas encore été confirmée.
+
+Il est enregistré dans une transaction locale.
+
+### 6.4. Étape 3 — Informer Book Service via gRPC
+
+Borrow Service appelle :
+
+```protobuf
+rpc ReturnBook(ReturnBookRequest)
+    returns (ReturnBookResponse);
+```
+
+Book Service vérifie l'état du livre et le remet à disposition :
+
+```sql
+UPDATE books
+SET status = 'AVAILABLE'
+WHERE id = ?
+AND status = 'BORROWED';
+```
+
+L'opération doit être sécurisée et idempotente.
+
+### 6.5. Étape 4 — Confirmer le retour
+
+Lorsque Book Service confirme la remise à disposition :
+
+Borrow Service met à jour son emprunt :
+
+```text
+status = RETURNED
+returned_at = date actuelle
+```
+
+Le retour est maintenant confirmé.
+
+### 6.6. Séquence complète du retour
+
+```text
+Frontend
+   |
+   v
+API Gateway
+   |
+   v
+Borrow Service
+   |
+   | Vérifier l'emprunt
+   |
+   | Enregistrer RETURN_PENDING
+   |
+   |--- gRPC ---> Book Service
+   |                |
+   |                | Mettre le livre AVAILABLE
+   |<--------------|
+   |  Confirmation
+   |
+   | Enregistrer RETURNED
+   | et returned_at
+   |
+   v
+Publier BORROW_RETURNED
+dans Kafka
+```
+
+---
+
+## 7. Gestion des échecs pendant un retour
+
+Le retour implique deux bases de données indépendantes. Il faut donc gérer les échecs entre les étapes.
+
+### Scénario 1 — Book Service est indisponible
+
+Borrow Service a enregistré :
+
+```text
+status = RETURN_PENDING
+```
+
+Mais Book Service n'a pas pu rendre le livre disponible.
+
+**Action :**
+
+- Ne pas confirmer le retour comme terminé.
+- Conserver l'état `RETURN_PENDING`.
+- Réessayer l'appel gRPC de manière contrôlée.
+- Utiliser un mécanisme de reprise pour traiter les retours en attente.
+
+Le système doit permettre de retrouver les opérations qui n'ont pas abouti.
+
+### Scénario 2 — Book Service a rendu le livre disponible, mais Borrow Service n'a pas pu confirmer le retour
+
+On peut avoir :
+
+```text
+Book Service :
+AVAILABLE
+
+Borrow Service :
+RETURN_PENDING
+```
+
+C'est une situation de cohérence temporaire.
+
+**Solution : idempotence et reprise.**
+
+Borrow Service peut réessayer l'appel `ReturnBook`.
+
+Book Service doit reconnaître que le retour a déjà été traité et ne pas produire une nouvelle modification incorrecte.
+
+Ensuite, Borrow Service peut finaliser son enregistrement en `RETURNED`.
+
+Il est préférable de transmettre un identifiant d'opération unique (`return_id`) pour reconnaître les appels répétés.
+
+### Scénario 3 — Le service tombe en panne pendant le traitement
+
+Un mécanisme de récupération doit rechercher périodiquement les emprunts restés en `RETURN_PENDING`.
+
+Il peut alors reprendre le traitement, vérifier l'état du livre auprès de Book Service et finaliser l'opération si les conditions sont réunies.
+
+Cette stratégie évite de perdre définitivement une opération simplement parce qu'un service a redémarré au mauvais moment.
+
+---
+
+## 8. Kafka : annoncer le retour d'un livre
+
+### 8.1. Pourquoi utiliser Kafka ?
+
+Lorsqu'un livre est retourné, d'autres services peuvent avoir besoin de réagir.
+
+Par exemple :
+
+- Notification Service doit informer les utilisateurs intéressés.
+- Un futur service de statistiques peut mettre à jour ses indicateurs.
+- Un futur service de gestion des listes d'attente peut proposer le livre à la prochaine personne.
+
+Il serait peu pratique que Borrow Service appelle directement chacun de ces services.
+
+À la place, il publie un événement métier dans Kafka.
+
+### 8.2. Événement publié
+
+Après confirmation du retour, Borrow Service publie :
+
+```text
+Topic : borrow-events
+
+Event : BORROW_RETURNED
+```
+
+Exemple de payload :
+
+```json
+{
+  "eventId": "event-123",
+  "eventType": "BORROW_RETURNED",
+  "borrowId": "borrow-456",
+  "bookId": "book-123",
+  "userId": "user-789",
+  "returnedAt": "2026-11-13T12:30:00Z"
+}
+```
+
+L'événement indique qu'un retour a été effectué.
+
+Il ne s'agit pas d'une commande demandant à Book Service de modifier la disponibilité : cette responsabilité a déjà été traitée via gRPC.
+
+### 8.3. Notification Service
+
+Notification Service consomme les événements du topic `borrow-events`.
+
+Lorsqu'il reçoit `BORROW_RETURNED`, il peut :
+
+1. Identifier les utilisateurs qui ont demandé à être informés du retour de ce livre.
+2. Vérifier les éventuelles règles de priorité.
+3. Envoyer une notification.
+
+Exemple :
+
+> Le livre que vous attendiez est maintenant disponible !
+
+Borrow Service n'a pas besoin de connaître le fonctionnement interne de Notification Service.
+
+### 8.4. Garantir la publication de l'événement : Transactional Outbox
+
+Un problème peut se produire :
+
+```text
+Borrow Service :
+Retour confirmé dans la base de données.
+
+Kafka :
+Indisponible au moment de publier l'événement.
+```
+
+Le retour est enregistré, mais aucune notification ne sera déclenchée si l'événement est perdu.
+
+Pour éviter cela, on peut utiliser le **Transactional Outbox Pattern**.
+
+Principe :
+
+1. Borrow Service confirme le retour dans sa base de données.
+2. Dans la même transaction SQL, il insère un événement dans une table `outbox_events`.
+3. Un processus indépendant lit les événements non publiés.
+4. Il les publie dans Kafka.
+5. Une fois la publication confirmée, il marque l'événement comme publié.
+
+Exemple de table :
+
+| Attribut | Description |
+|---|---|
+| `id` | Identifiant de l'événement |
+| `event_type` | Type de l'événement |
+| `payload` | Contenu JSON |
+| `created_at` | Date de création |
+| `published_at` | Date de publication, NULL si non publié |
+| `status` | PENDING ou PUBLISHED |
+
+Ainsi, si Kafka est temporairement indisponible, l'événement reste dans la base de données et pourra être publié plus tard.
+
+Attention : le consommateur Kafka doit également être idempotent, car un événement peut être livré plusieurs fois.
+
+---
+
+## 9. Saga Pattern et cohérence distribuée
+
+### 9.1. Pourquoi une Saga ?
+
+Dans une architecture microservices, chaque service possède sa propre base de données.
+
+Une transaction SQL classique ne peut pas garantir automatiquement que plusieurs bases de données seront modifiées ensemble.
+
+Par exemple, un emprunt implique :
+
+- Une réservation dans Book Service.
+- Un enregistrement dans Borrow Service.
+
+Si une opération réussit et l'autre échoue, le système doit pouvoir revenir à un état cohérent.
+
+Le Saga Pattern consiste à découper une opération métier distribuée en plusieurs transactions locales, avec des opérations de compensation lorsque cela est nécessaire.
+
+### 9.2. Saga pour l'emprunt
+
+```text
+1. Vérifier User Service
+          |
+          v
+2. Réserver le livre dans Book Service
+          |
+          v
+3. Enregistrer l'emprunt dans Borrow Service
+          |
+          v
+       SUCCÈS
+```
+
+Si l'étape 3 échoue :
+
+```text
+3. Enregistrement échoué
+          |
+          v
+4. Compensation :
+   Annuler la réservation dans Book Service
+```
+
+### 9.3. Saga pour le retour
+
+```text
+1. Enregistrer RETURN_PENDING
+          |
+          v
+2. Rendre le livre AVAILABLE
+   dans Book Service
+          |
+          v
+3. Confirmer RETURNED
+   dans Borrow Service
+          |
+          v
+4. Enregistrer l'événement
+   dans l'Outbox
+          |
+          v
+5. Publier dans Kafka
+```
+
+Si une étape échoue, l'opération doit être reprise à partir de son état connu.
+
+Pour le retour, il est généralement préférable de reprendre une étape incomplète plutôt que de tenter de ré-emprunter ou de modifier arbitrairement l'état du livre.
+
+---
+
+## 10. Principes techniques à respecter
+
+Pour rendre Borrow Service fiable, plusieurs principes doivent être appliqués.
+
+### 10.1. Idempotence
+
+Une opération est idempotente lorsque son exécution plusieurs fois produit le même résultat métier qu'une seule exécution.
+
+Exemple :
+
+Si un retour est demandé deux fois à cause d'un timeout réseau, le système ne doit pas enregistrer deux retours différents.
+
+On peut utiliser :
+
+- Un identifiant unique d'opération.
+- Des vérifications d'état avant chaque modification.
+- Des contraintes d'unicité dans la base de données.
+
+### 10.2. Timeouts et retries
+
+Les appels gRPC doivent avoir des délais d'attente (`deadline`).
+
+En cas d'échec temporaire, on peut réessayer avec un délai progressif (exponential backoff).
+
+Attention : un timeout ne signifie pas toujours que l'opération distante n'a pas été exécutée. Le serveur peut avoir terminé l'opération sans que le client ait reçu la réponse.
+
+C'est pourquoi les retries doivent être associés à des opérations idempotentes.
+
+### 10.3. Contraintes en base de données
+
+Quelques contraintes utiles :
+
+- Clés étrangères lorsque les identifiants sont gérés dans la même base.
+- Identifiants uniques pour les emprunts et les opérations.
+- Contrôle des états autorisés.
+- Une seule opération d'emprunt active par exemplaire.
+- Transactions locales pour les modifications liées.
+
+Il faut noter que les identifiants `user_id` et `book_id` appartiennent à d'autres microservices. On ne doit pas créer des clés étrangères SQL vers leurs bases de données indépendantes.
+
+### 10.4. Journalisation
+
+Chaque opération importante doit être journalisée avec des identifiants de corrélation.
+
+Exemples :
+
+```text
+[Borrow] Request received
+[Borrow] User verified
+[Borrow] Book reservation successful
+[Borrow] Borrow record created
+[Return] Return initiated
+[Return] Book availability updated
+[Return] Return confirmed
+[Kafka] BORROW_RETURNED published
+```
+
+Ces logs facilitent le diagnostic lorsqu'une opération distribuée échoue.
+
+---
+
+## 11. Répartition finale des responsabilités
+
+| Service | Responsabilité |
+|---|---|
+| User Service | Gestion des utilisateurs et de leur statut |
+| Book Service | Gestion du catalogue et de la disponibilité |
+| Borrow Service | Gestion des emprunts, retours et échéances |
+| Notification Service | Envoi des notifications |
+| Kafka | Diffusion asynchrone des événements |
+
+### Répartition des communications
+
+| Opération | Mécanisme |
+|---|---|
+| Vérifier un utilisateur | gRPC |
+| Vérifier l'existence d'un livre | gRPC |
+| Réserver un livre | gRPC |
+| Enregistrer un emprunt | Base de Borrow Service |
+| Rendre un livre disponible | gRPC |
+| Enregistrer un retour | Base de Borrow Service |
+| Annoncer un retour | Kafka |
+| Envoyer une notification | Notification Service |
+
+---
+
+## 12. Ordre de développement recommandé
+
+Pour développer Borrow Service progressivement et tester chaque fonctionnalité :
+
+### Phase 1 — Structure du microservice
+
+- Créer le dossier `borrow-service`.
+- Initialiser le projet Node.js.
+- Installer les dépendances nécessaires.
+- Définir le fichier `borrow.proto`.
+- Configurer le serveur gRPC.
+- Configurer la base de données de Borrow Service.
+
+### Phase 2 — Fonctionnalité d'emprunt
+
+- Implémenter le repository.
+- Implémenter le service métier.
+- Implémenter le handler gRPC.
+- Communiquer avec User Service.
+- Communiquer avec Book Service.
+- Ajouter la réservation atomique.
+- Enregistrer l'emprunt.
+- Tester les cas d'erreur et les accès concurrents.
+
+### Phase 3 — Fonctionnalité de retour
+
+- Vérifier l'emprunt.
+- Implémenter l'état `RETURN_PENDING`.
+- Communiquer avec Book Service.
+- Rendre le livre disponible.
+- Confirmer le retour.
+- Gérer les erreurs et les reprises.
+
+### Phase 4 — Fiabilité distribuée
+
+- Ajouter les identifiants d'opération.
+- Ajouter l'idempotence.
+- Ajouter les timeouts et retries.
+- Ajouter les mécanismes de compensation Saga.
+- Ajouter la récupération des opérations incomplètes.
+
+### Phase 5 — Kafka et notifications
+
+- Configurer Kafka.
+- Créer le topic `borrow-events`.
+- Implémenter la publication de `BORROW_RETURNED`.
+- Ajouter la table Outbox.
+- Implémenter le processus de publication.
+- Développer Notification Service comme consommateur.
+- Tester les événements dupliqués et les indisponibilités de Kafka.
+
+---
+
+## Conclusion
+
+Borrow Service joue le rôle de coordinateur métier pour les emprunts et les retours.
+
+**gRPC** permet de réaliser les communications directes qui nécessitent une réponse immédiate, notamment les vérifications et les changements de disponibilité.
+
+**Kafka** permet de diffuser les événements métier après leur réalisation, sans coupler Borrow Service aux services qui souhaitent réagir à ces événements.
+
+La concurrence est gérée au niveau du service propriétaire de la ressource : Book Service protège atomiquement la disponibilité des livres.
+
+Enfin, le Saga Pattern, l'idempotence, les retries et le Transactional Outbox permettent de rendre les opérations distribuées plus fiables malgré les pannes et les problèmes de communication.
+
+L'objectif n'est pas de garantir qu'aucun service ne tombera jamais en panne, mais de concevoir un système capable de détecter les opérations incomplètes, de les reprendre et de retrouver un état cohérent.
 
 
 
 
 ## Authors
-Nairouz Bakhta Ben Hadj Slama
+Bakhta Nairouz Ben Hadj Slama
 
 
