@@ -12,11 +12,13 @@ async function getUsers() {
     return userRepository.findAll();
 }
 
+
 async function createUser(data) {
     const user = {
         id: randomUUID(),
         name: data.name,
-        email: data.email
+        email: data.email, 
+         account_status: "ACTIVE"
     };
 
     await userRepository.create(user);
@@ -34,5 +36,6 @@ module.exports = {
     getUser,
     getUsers,
     createUser,
-    deleteUser
+    deleteUser, 
+
 };

@@ -1,3 +1,4 @@
+
 syntax = "proto3";
 
 package user;
@@ -11,10 +12,17 @@ service UserService {
  
 }
 
+enum AccountStatus {
+  ACCOUNT_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  SUSPENDED = 2;
+}
+
 message User {
   string id = 1;
   string name = 2;
   string email = 3;
+  AccountStatus account_status = 4;
 }
 
 message UserRequest {
@@ -26,11 +34,10 @@ message CreateUserRequest {
   string email = 2;
 }
 
-
 message GetUsersRequest {
   int32 page_size = 1;
   string page_token = 2;
-  //page_token permet de savoir où reprendre la récupération des données lorsqu'on passe à la page suivante.
+  AccountStatus  status=3;
 }
 
 message UserResponse {
@@ -39,14 +46,15 @@ message UserResponse {
 
 message UsersResponse {
   repeated User users = 1;
+  string next_page_token = 2;
 }
 
 message DeleteResponse {
   bool success = 1;
 }
+
 message UpdateUserRequest {
   string id = 1;
   string name = 2;
   string email = 3;
 }
-message Empty {}

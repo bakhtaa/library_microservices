@@ -12,19 +12,27 @@ async function findById(id) {
     );
 }
 
-async function findAll() {
+async function findAll(status) {
     const db = await dbPromise;
 
-    return db.all("SELECT * FROM users");
+    if (!status || status === "ACCOUNT_STATUS_UNSPECIFIED") {
+        return db.all("SELECT * FROM users");
+    }
+
+    return db.all(
+        "SELECT * FROM users WHERE account_status = ?",
+        [status]
+    );
 }
 
 async function create(user) {
     const db = await dbPromise;
-    const { id, name, email } = user;
+    const { id, name, email, account_status } = user;
 
     return db.run(
-        "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-        [id, name, email]
+        `INSERT INTO users (id, name, email, account_status)
+         VALUES (?, ?, ?, ?)`,
+        [id, name, email, account_status]
     );
 }
 
@@ -32,7 +40,7 @@ async function deleteById(id) {
     const db = await dbPromise;
 
     const result = await db.run(
-        "DELETE FROM users WHERE id = ?",
+        " UPDATE users SET account_status = 'INACTIVE' WHERE id = ?;" ,
         [id]
     );
 
