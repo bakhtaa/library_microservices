@@ -20,7 +20,7 @@ const userHandler = {
 
     GetUsers: async (call, sendResponse) => {
         try {
-            const users = await userService.getUsers();
+            const users = await userService.getUsers(call.request);
             sendResponse(null, { users });
 
         } catch (error) {

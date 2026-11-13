@@ -12,17 +12,12 @@ service UserService {
  
 }
 
-enum AccountStatus {
-  ACCOUNT_STATUS_UNSPECIFIED = 0;
-  ACTIVE = 1;
-  SUSPENDED = 2;
-}
 
 message User {
   string id = 1;
   string name = 2;
   string email = 3;
-  AccountStatus account_status = 4;
+  string account_status = 4;
 }
 
 message UserRequest {
@@ -37,7 +32,7 @@ message CreateUserRequest {
 message GetUsersRequest {
   int32 page_size = 1;
   string page_token = 2;
-  AccountStatus  status=3;
+  string  status=3;
 }
 
 message UserResponse {

@@ -8,8 +8,8 @@ async function getUser(id) {
     return userRepository.findById(id);
 }
 
-async function getUsers() {
-    return userRepository.findAll();
+async function getUsers(data) {
+    return userRepository.findAll(data.status);
 }
 
 
