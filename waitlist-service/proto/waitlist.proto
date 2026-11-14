@@ -1,0 +1,38 @@
+
+syntax = "proto3";
+
+package waitlist;
+
+service WaitlistService {
+
+    rpc JoinWaitlist (JoinWaitlistRequest)
+        returns (WaitlistResponse);
+
+    rpc LeaveWaitlist (LeaveWaitlistRequest)
+        returns (WaitlistResponse);
+}
+
+message JoinWaitlistRequest {
+    string user_id = 1;
+    string book_id = 2;
+}
+
+message LeaveWaitlistRequest {
+    string entry_id = 1;
+}
+
+message WaitlistEntry {
+    string id = 1;
+    string user_id = 2;
+    string book_id = 3;
+    string status = 4;
+    string created_at = 5;
+    string notified_at = 6;
+    string cancelled_at = 7;
+}
+
+message WaitlistResponse {
+    bool success = 1;
+    string message = 2;
+    WaitlistEntry entry = 3;
+}

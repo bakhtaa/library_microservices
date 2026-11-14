@@ -107,11 +107,24 @@ async function markAsNotified(id, notifiedAt) {
     return findById(id);
 }
 
+async function findWaitingEntry(userId, bookId) {
+    const db = await dbPromise;
+
+    return db.get(
+        `SELECT *
+         FROM waitlist
+         WHERE user_id = ?
+         AND book_id = ?
+         AND status = 'WAITING'`,
+        [userId, bookId]
+    );
+}
 module.exports = {
     createEntry,
     findById,
     findWaitingByBook,
     findByUser,
     cancelEntry,
-    markAsNotified
+    markAsNotified,
+    findWaitingEntry
 };
