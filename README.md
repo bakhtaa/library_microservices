@@ -2,6 +2,17 @@
 # Système de gestion de bibliothèque — Architecture Microservices
 
 ## 1. Présentation du projet
+1. Quel problème réel ce projet résout-il ?
+Imagine une bibliothèque universitaire avec plusieurs centaines d'étudiants.
+
+Elle rencontre plusieurs problèmes :
+- Gestion des emprunts : éviter qu'un même livre soit emprunté simultanément par deux personnes.
+- Suivi des retours : connaître les emprunts actifs, les dates limites et les retards.
+- Rappels automatiques : prévenir les étudiants avant la date limite pour réduire les retards.
+- Gestion des listes d'attente : prévenir les étudiants lorsqu'un livre qu'ils souhaitent emprunter redevient disponible.
+- Gestion des utilisateurs : vérifier les comptes et leurs autorisations.
+Notre application apporte une réponse à ces problèmes.
+
 
 ### 1.1. Problématique : concevoir un système distribué de gestion de bibliothèque
 
