@@ -9,7 +9,7 @@ const { initializeDatabase } = require("./src/config/database");
 // Load Borrow proto
 const borrowProtoPath = path.join(
     __dirname,
-    "../user-service/proto/user.proto"
+    "proto/borrow.proto"
 );
 
 const borrowDefinition = protoLoader.loadSync(

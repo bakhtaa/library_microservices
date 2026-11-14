@@ -8,15 +8,24 @@ const grpc = require("@grpc/grpc-js");
 
 function getUser(userId) {
     return new Promise((resolve, reject) => {
+
+        console.log("User ID sent to UserService:", userId);
+
         userClient.GetUser({ id: userId }, (error, response) => {
 
             if (error) {
+                console.error("GetUser error:", error);
+                console.log("gRPC error code:", error.code);
+
                 if (error.code === grpc.status.NOT_FOUND) {
                     return resolve(null);
                 }
 
                 return reject(error);
             }
+
+            console.log("Complete GetUser response:", response);
+            console.log("User returned:", response.user);
 
             resolve(response.user);
         });
