@@ -17,7 +17,8 @@ async function initializeDatabase() {
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             name TEXT,
-            email TEXT
+            email TEXT, 
+            account_status TEXT NOT NULL DEFAULT 'ACTIVE'
         )
     `);
 

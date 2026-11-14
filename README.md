@@ -1050,7 +1050,20 @@ Ces logs facilitent le diagnostic lorsqu'une opération distribuée échoue.
 | Envoyer une notification | Notification Service |
 
 ---
-
+BorrowService
+    |
+    +---- UserService (gRPC)
+    |        |
+    |        +---- GetUser()
+    |
+    +---- BookService (gRPC)
+    |        |
+    |        +---- BorrowBook()
+    |        +---- ReturnBook()
+    |
+    +---- BorrowRepository
+             |
+             +---- SQLite
 
 ## Conclusion
 
@@ -1065,9 +1078,156 @@ La concurrence est gérée au niveau du service propriétaire de la ressource : 
 Enfin, le Saga Pattern, l'idempotence, les retries et le Transactional Outbox permettent de rendre les opérations distribuées plus fiables malgré les pannes et les problèmes de communication.
 
 L'objectif n'est pas de garantir qu'aucun service ne tombera jamais en panne, mais de concevoir un système capable de détecter les opérations incomplètes, de les reprendre et de retrouver un état cohérent.
+## **Return Book Workflow**
 
+When a user returns a book, they provide the borrow record identifier (`borrow_id`).
 
+The **BorrowService** is responsible for coordinating the return process:
 
+1. Retrieve the borrow record from its own database using `borrow_id`.
+2. Verify that the borrow record exists.
+3. Check that its status is `ACTIVE`.
+4. Ask the **BookService** to release the book and change its status to `AVAILABLE`.
+5. Update the borrow record in its own database by changing its status to `RETURNED`.
+6. Record the return date (`returned_at`).
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    A["returnBook(borrowId)"] --> B["borrowRepository.findById()"]
+    B --> C{"Borrow record found?"}
+
+    C -->|No| D["Return error: Borrow not found"]
+    C -->|Yes| E{"Status = ACTIVE?"}
+
+    E -->|No| F["Return error: Already returned"]
+    E -->|Yes| G["releaseBook(bookId)"]
+
+    G --> H{"Book successfully released?"}
+
+    H -->|No| I["Return error: Book release failed"]
+    H -->|Yes| J["markAsReturned(borrowId, returnedAt)"]
+
+    J --> K["Return success"]
+```
+### Why This Execution Order?
+
+**1. Why retrieve the borrow record before calling BookService?**
+
+Because each microservice owns its own business data.
+
+- **BookService** manages book availability and knows whether a book is `AVAILABLE`, `BORROWED` or `UNAVAILABLE`.
+- **BorrowService** manages borrow records and knows whether a borrow exists and whether it is still `ACTIVE`.
+
+Therefore, BorrowService must first retrieve the borrow record and verify its status before requesting the book release.
+
+**2. Why call BookService before updating the borrow record?**
+
+We must not mark a borrow as `RETURNED` if BookService has failed to release the book.
+
+The execution order is therefore:
+
+```text
+BookService.ReturnBook()
+          |
+          v
+BorrowRepository.markAsReturned()
+```
+
+First, BookService changes the book status to `AVAILABLE`. Only after a successful response does BorrowService update its local borrow record to `RETURNED`.
+
+**3. What happens if the second operation fails?**
+
+This execution order does not guarantee distributed transaction consistency.
+
+For example:
+
+1. BookService successfully releases the book.
+2. BorrowService encounters an SQLite error while updating the borrow record.
+3. The book is now `AVAILABLE`, but the borrow record remains `ACTIVE`.
+
+This creates an inconsistency between the two microservices.
+
+A more robust implementation will address this problem using:
+- **Saga Pattern** to coordinate distributed operations.
+- **Compensation operations** to handle failures.
+- **Operation IDs** to identify and safely retry operations.
+- **Kafka + Transactional Outbox** for reliable event publishing.
+### Service Responsibilities
+
+| Component | Responsibility |
+|---|---|
+| `BorrowService` | Orchestrates the return workflow |
+| `borrowRepository.findById()` | Retrieves the borrow record |
+| `BookService.ReturnBook()` | Changes the book status to `AVAILABLE` |
+| `borrowRepository.markAsReturned()` | Changes the borrow status to `RETURNED` and records `returned_at` |
+
+### Important: Distributed Consistency
+
+The return operation involves two independent microservices and their databases.
+
+If BookService successfully releases the book but BorrowService fails to update its own database, an inconsistency may occur.
+
+This is a distributed consistency problem that can be addressed later using **Saga Pattern**, compensation operations and reliable event publishing with **Kafka (Transactional Outbox)**.
+
+## Borrow Book Workflow
+
+The BorrowService acts as the orchestrator of the borrowing process. It coordinates UserService and BookService through synchronous gRPC communication while maintaining ownership of borrowing records in its own SQLite database.
+
+### Workflow
+
+1. **Receive Borrow Request**
+   - The client sends a `BorrowBook` gRPC request containing `user_id` and `book_id`.
+   - The Borrow Handler forwards the request to `borrowService.borrowBook()`.
+
+2. **Validate User**
+   - BorrowService calls `UserService.GetUser()` through its gRPC client.
+   - UserService retrieves the user from its own database.
+   - BorrowService verifies that the user exists and that `account_status` is `ACTIVE`.
+   - If validation fails, the borrowing process stops.
+
+3. **Reserve Book**
+   - BorrowService calls `BookService.BorrowBook()` through its gRPC client.
+   - BookService performs an atomic conditional SQL update:
+   
+   ```sql
+   UPDATE books
+   SET status = 'BORROWED'
+   WHERE id = ?
+   AND status = 'AVAILABLE';
+   ```
+
+   - The reservation succeeds only if the book exists and is currently available.
+   - This prevents two concurrent requests from successfully reserving the same book.
+
+   **Note:** `CheckAvailability()` is available for informational queries but is not required before `BorrowBook()`, since the reservation operation performs its own availability check atomically.
+
+4. **Create Borrow Record**
+   - Once the reservation succeeds, BorrowService generates a unique borrow ID.
+   - It sets the borrowing date, a due date (14 days later), and the initial status (`ACTIVE`).
+   - `borrowRepository.createBorrow()` persists the record in BorrowService's own SQLite database.
+
+5. **Return Response**
+   - BorrowService returns a success response containing the created borrow record.
+   - The Borrow Handler forwards the response to the original client.
+
+### Compensation on Failure
+
+If the book has been successfully reserved but persisting the borrow record fails, BorrowService attempts to compensate by calling `BookService.ReturnBook()` to release the book.
+
+This is a simplified implementation of the Saga pattern, where a compensating action attempts to undo a previously completed operation.
+
+### Service Responsibilities
+
+| Service | Responsibility |
+|---|---|
+| UserService | User existence and account status validation |
+| BookService | Book availability and reservation |
+| BorrowService | Borrowing workflow orchestration and borrow record persistence |
+
+Each microservice owns its own database. BorrowService never accesses UserService's or BookService's database directly.
+![alt text](image.png)
 
 ## Authors
 Bakhta Nairouz Ben Hadj Slama
