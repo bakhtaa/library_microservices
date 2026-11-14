@@ -18,7 +18,7 @@ async function createBook(data) {
         id: randomUUID(),
         title: data.title,
         author: data.author,
-        available: true
+        status: "AVAILABLE"
     };
 
     await bookRepository.create(book);
@@ -31,8 +31,7 @@ async function updateBook(data) {
     return bookRepository.update(
         data.id,
         data.title,
-        data.author,
-        data.available
+        data.author
     );
 }
 
@@ -48,11 +47,23 @@ async function checkAvailability(id) {
     return bookRepository.checkAvailability(id);
 }
 
+// Emprunter un livre
+async function borrowBook(id) {
+    return bookRepository.borrowBook(id);
+}
+
+// Retourner un livre
+async function returnBook(id) {
+    return bookRepository.returnBook(id);
+}
+
 module.exports = {
     getBook,
     getBooks,
     createBook,
     updateBook,
     deleteBook,
-    checkAvailability
+    checkAvailability,
+    borrowBook,
+    returnBook
 };

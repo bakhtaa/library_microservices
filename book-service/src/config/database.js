@@ -1,4 +1,3 @@
-
 const path = require("path");
 const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
@@ -18,7 +17,7 @@ async function initializeDatabase() {
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             author TEXT NOT NULL,
-            available INTEGER NOT NULL DEFAULT 1
+            status TEXT NOT NULL DEFAULT 'AVAILABLE'
         )
     `);
 

@@ -1,63 +1,47 @@
 
 const { dbPromise } = require("../config/database");
 
-// Convertir la valeur SQLite (0 ou 1) en booléen JavaScript
-function formatBook(book) {
-    if (!book) return null;
-
-    return {
-        ...book,
-        available: Boolean(book.available)
-    };
-}
-
 // Récupérer un livre par son ID
 async function findById(id) {
     const db = await dbPromise;
 
-    const book = await db.get(
+    return db.get(
         "SELECT * FROM books WHERE id = ?",
         [id]
     );
-
-    return formatBook(book);
 }
 
 // Récupérer tous les livres
 async function findAll() {
     const db = await dbPromise;
 
-    const books = await db.all(
-        "SELECT * FROM books"
-    );
-
-    return books.map(formatBook);
+    return db.all("SELECT * FROM books");
 }
 
 // Ajouter un livre
 async function create(book) {
     const db = await dbPromise;
 
-    const { id, title, author, available } = book;
+    const { id, title, author, status } = book;
 
     await db.run(
-        `INSERT INTO books (id, title, author, available)
+        `INSERT INTO books (id, title, author, status)
          VALUES (?, ?, ?, ?)`,
-        [id, title, author, available ? 1 : 0]
+        [id, title, author, status]
     );
 
     return book;
 }
 
-// Modifier un livre
-async function update(id, title, author, available) {
+// Modifier les informations d'un livre
+async function update(id, title, author) {
     const db = await dbPromise;
 
     const result = await db.run(
         `UPDATE books
-         SET title = ?, author = ?, available = ?
+         SET title = ?, author = ?
          WHERE id = ?`,
-        [title, author, available ? 1 : 0, id]
+        [title, author, id]
     );
 
     if (result.changes === 0) {
@@ -84,11 +68,107 @@ async function checkAvailability(id) {
     const db = await dbPromise;
 
     const book = await db.get(
-        "SELECT available FROM books WHERE id = ?",
+        "SELECT id, status FROM books WHERE id = ?",
         [id]
     );
 
-    return book ? Boolean(book.available) : false;
+    if (!book) {
+        return {
+            exists: false,
+            available: false,
+            status: ""
+        };
+    }
+
+    return {
+        exists: true,
+        available: book.status === "AVAILABLE",
+        status: book.status
+    };
+}
+
+// Réserver un livre de manière atomique
+async function borrowBook(id) {
+    const db = await dbPromise;
+
+    const result = await db.run(
+        `UPDATE books
+         SET status = 'BORROWED'
+         WHERE id = ?
+         AND status = 'AVAILABLE'`,
+        [id]
+    );
+
+    // Une ligne modifiée signifie que la réservation a réussi
+    if (result.changes === 1) {
+        return {
+            success: true,
+            message: "Book borrowed successfully",
+            book: await findById(id)
+        };
+    }
+
+    // Aucune ligne modifiée : vérifier pourquoi
+    const book = await findById(id);
+
+    if (!book) {
+        return {
+            success: false,
+            message: "Book not found",
+            book: null
+        };
+    }
+
+    if (book.status === "BORROWED") {
+        return {
+            success: false,
+            message: "Book is already borrowed",
+            book
+        };
+    }
+
+    return {
+        success: false,
+        message: "Book is unavailable",
+        book
+    };
+}
+
+// Retourner un livre de manière atomique
+async function returnBook(id) {
+    const db = await dbPromise;
+
+    const result = await db.run(
+        `UPDATE books
+         SET status = 'AVAILABLE'
+         WHERE id = ?
+         AND status = 'BORROWED'`,
+        [id]
+    );
+
+    if (result.changes === 1) {
+        return {
+            success: true,
+            message: "Book returned successfully",
+            book: await findById(id)
+        };
+    }
+
+    const book = await findById(id);
+
+    if (!book) {
+        return {
+            success: false,
+            message: "Book not found",
+            book: null
+        };
+    }
+
+    return {
+        success: false,
+        message: "Book is not currently borrowed",
+        book
+    };
 }
 
 module.exports = {
@@ -97,5 +177,7 @@ module.exports = {
     create,
     update,
     deleteById,
-    checkAvailability
+    checkAvailability,
+    borrowBook,
+    returnBook
 };

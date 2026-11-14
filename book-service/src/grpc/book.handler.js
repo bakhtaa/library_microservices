@@ -88,21 +88,63 @@ const bookHandler = {
         }
     },
 
-    CheckAvailability: async (call, callback) => {
-        try {
-            const available = await bookService.checkAvailability(
-                call.request.id
-            );
+   CheckAvailability: async (call, callback) => {
+    try {
+        const result = await bookService.checkAvailability(
+            call.request.id
+        );
 
-            callback(null, { available });
+        callback(null, {
+            exists: result.exists,
+            available: result.available,
+            status: result.status
+        });
 
-        } catch (err) {
-            callback({
-                code: grpc.status.INTERNAL,
-                details: err.message
-            });
-        }
+    } catch (err) {
+        callback({
+            code: grpc.status.INTERNAL,
+            details: err.message
+        });
     }
+},
+BorrowBook: async (call, callback) => {
+    try {
+        const result = await bookService.borrowBook(
+            call.request.id
+        );
+
+        callback(null, {
+            success: result.success,
+            message: result.message,
+            book: result.book
+        });
+
+    } catch (err) {
+        callback({
+            code: grpc.status.INTERNAL,
+            details: err.message
+        });
+    }
+},
+ReturnBook: async (call, callback) => {
+    try {
+        const result = await bookService.returnBook(
+            call.request.id
+        );
+
+        callback(null, {
+            success: result.success,
+            message: result.message,
+            book: result.book
+        });
+
+    } catch (err) {
+        callback({
+            code: grpc.status.INTERNAL,
+            details: err.message
+        });
+    }
+}
 };
 
 module.exports = bookHandler;
