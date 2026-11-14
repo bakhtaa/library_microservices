@@ -26,18 +26,26 @@ const bookHandler = {
     },
 
     GetBooks: async (_, callback) => {
-        try {
-            const books = await bookService.getBooks();
+    try {
+        const books = await bookService.getBooks();
 
-            callback(null, { books });
+        console.log("BOOKS FROM DATABASE:", books);
 
-        } catch (err) {
-            callback({
-                code: grpc.status.INTERNAL,
-                details: err.message
-            });
-        }
-    },
+        const response = { books };
+
+        console.log("GRPC RESPONSE:", response);
+
+        callback(null, response);
+
+    } catch (err) {
+        console.error("GetBooks error:", err);
+
+        callback({
+            code: grpc.status.INTERNAL,
+            details: err.message
+        });
+    }
+},
 
     CreateBook: async (call, callback) => {
         try {

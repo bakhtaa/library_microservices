@@ -6,10 +6,16 @@ const { dbPromise } = require("../config/database");
 async function findById(id) {
     const db = await dbPromise;
 
-    return db.get(
+    console.log("ID received by repository:", id);
+
+    const user = await db.get(
         "SELECT * FROM users WHERE id = ?",
         [id]
     );
+
+    console.log("USER FOUND IN DATABASE:", user);
+
+    return user;
 }
 
 async function findAll(status) {
