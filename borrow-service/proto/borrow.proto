@@ -1,40 +1,43 @@
+
 syntax = "proto3";
 
 package borrow;
 
 service BorrowService {
-  rpc BorrowBook (BorrowRequest) returns (BorrowResponse);
-  rpc ReturnBook (ReturnRequest) returns (BorrowResponse);
-  rpc GetUserBorrows (UserRequest) returns (BorrowListResponse);
+    rpc BorrowBook (BorrowRequest) returns (BorrowResponse);
+    rpc ReturnBook (ReturnRequest) returns (BorrowResponse);
+    rpc GetUserBorrows (UserRequest) returns (BorrowListResponse);
 }
 
 message Borrow {
-  string id = 1;
-  string userId = 2;
-  string bookId = 3;
-  string status = 4; // BORROWED / RETURNED
+    string id = 1;
+    string user_id = 2;
+    string book_id = 3;
+    string status = 4; // ACTIVE / RETURNED
+    string borrowed_at = 5;
+    string due_date = 6;
+    string returned_at = 7;
 }
 
 message BorrowRequest {
-  string userId = 1;
-  string bookId = 2;
+    string user_id = 1;
+    string book_id = 2;
 }
 
 message ReturnRequest {
-  string userId = 1;
-  string bookId = 2;
+    string borrow_id = 1;
 }
 
 message UserRequest {
-  string userId = 1;
+    string user_id = 1;
 }
 
 message BorrowResponse {
-  bool success = 1;
-  string message = 2;
-  Borrow borrow = 3;
+    bool success = 1;
+    string message = 2;
+    Borrow borrow = 3;
 }
 
 message BorrowListResponse {
-  repeated Borrow borrows = 1;
+    repeated Borrow borrows = 1;
 }
