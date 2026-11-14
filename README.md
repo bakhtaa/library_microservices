@@ -4105,10 +4105,252 @@ Pour avancer progressivement et pouvoir tester chaque brique :
 
 Cette progression permet de commencer par un événement simple et observable avant d'introduire les mécanismes de fiabilité plus avancés.
 
+# WaitlistService – Gestion des listes d'attente
+
+## 1. Objectif
+
+Le WaitlistService permet aux utilisateurs de rejoindre une liste d'attente lorsqu'un livre est actuellement emprunté par un autre utilisateur.
+
+Il permet également de consulter les inscriptions et de quitter une liste d'attente.
+
+Ce service possède sa propre base de données et communique avec les autres microservices à travers gRPC, sans accéder directement à leurs bases de données.
+
+## 2. Architecture et séparation des responsabilités
+
+Le WaitlistService adopte une architecture en couches :
+
+- **Repository** : responsable de l'accès aux données. Il communique avec SQLite et exécute les opérations SQL nécessaires à la gestion des inscriptions.
+- **Service** : contient la logique métier. Il vérifie les conditions nécessaires à une inscription, applique les règles de gestion et coordonne les interactions avec les autres microservices.
+- **Handler** : responsable de la communication gRPC. Il reçoit les requêtes des clients, transmet les demandes au Service et retourne les réponses.
+- **gRPC Clients** : permettent au WaitlistService de communiquer avec UserService et BookService.
+- **Kafka Consumer** : sera responsable de la consommation des événements `BOOK_AVAILABLE` publiés par BookService.
+
+### Flux d'exécution
+
+Lorsqu'un utilisateur souhaite rejoindre une liste d'attente :
+
+```text
+              gRPC Client
+                   |
+                   v
+             gRPC Handler
+                   |
+                   v
+           Waitlist Service
+                   |
+          +--------+--------+
+          |                 |
+          v                 v
+      UserService       BookService
+       (gRPC)             (gRPC)
+          |                 |
+          +--------+--------+
+                   |
+                   v
+          Waitlist Repository
+                   |
+                   v
+             SQLite Database
+```
+
+Cette organisation garantit une séparation claire entre la communication, la logique métier et la persistance des données.
+
+## 3. Modèle de données
+
+Le WaitlistService utilise une table `waitlist` pour enregistrer les inscriptions des utilisateurs.
+
+| Champ | Description |
+|---|---|
+| `id` | Identifiant unique de l'inscription |
+| `user_id` | Identifiant de l'utilisateur |
+| `book_id` | Identifiant du livre |
+| `status` | État actuel de l'inscription |
+| `created_at` | Date de création de l'inscription |
+| `notified_at` | Date d'envoi de la notification |
+| `cancelled_at` | Date d'annulation de l'inscription |
+
+Les champs `user_id` et `book_id` représentent des références vers UserService et BookService. Ils ne sont pas des clés étrangères locales, car chaque microservice conserve la propriété de ses propres données.
+
+### Statuts d'une inscription
+
+- `WAITING` : l'utilisateur attend que le livre redevienne disponible.
+- `NOTIFIED` : l'utilisateur a été averti que le livre est disponible.
+- `CANCELLED` : l'utilisateur a annulé son inscription.
+
+### Index et contraintes
+
+Deux index sont définis pour optimiser les opérations :
+
+**1. Index de recherche**
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_waitlist_book_status
+ON waitlist(book_id, status, created_at);
+```
+
+Cet index facilite la récupération des utilisateurs en attente d'un livre et permet de respecter leur ordre d'inscription.
+
+**2. Index UNIQUE partiel**
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_waiting_user_book
+ON waitlist(user_id, book_id)
+WHERE status = 'WAITING';
+```
+
+Cette contrainte empêche un utilisateur de rejoindre plusieurs fois la liste d'attente du même livre tant qu'une inscription est déjà en état `WAITING`.
+
+Elle constitue également une protection contre les inscriptions simultanées en double.
+
+## 4. Communication interservices avec gRPC
+
+Le WaitlistService utilise les clients gRPC de UserService et BookService pour vérifier les informations nécessaires à une inscription.
+
+### Interaction avec UserService
+
+Lorsqu'un utilisateur souhaite rejoindre une liste d'attente, WaitlistService appelle :
+
+```protobuf
+rpc GetUser(UserRequest) returns (UserResponse);
+```
+
+Cette opération permet de vérifier :
+
+- Que l'utilisateur existe.
+- Que son compte est actif (`account_status = ACTIVE`).
+
+### Interaction avec BookService
+
+WaitlistService appelle :
+
+```protobuf
+rpc GetBook(BookRequest) returns (BookResponse);
+```
+
+Cette opération permet de vérifier :
+
+- Que le livre existe.
+- Que son statut est `BORROWED`.
+
+L'inscription à la liste d'attente est actuellement autorisée uniquement lorsque le livre est emprunté.
+
+Le WaitlistService ne modifie jamais directement le statut du livre.
+
+## 5. Règles métier
+
+### JoinWaitlist
+
+Cette opération permet à un utilisateur de rejoindre la liste d'attente d'un livre.
+
+Les vérifications effectuées sont les suivantes :
+
+1. Vérifier l'existence de l'utilisateur auprès de UserService.
+2. Vérifier que son compte est actif.
+3. Vérifier l'existence du livre auprès de BookService.
+4. Vérifier que le livre possède le statut `BORROWED`.
+5. Vérifier qu'une inscription `WAITING` n'existe pas déjà pour ce couple utilisateur/livre.
+6. Générer un identifiant unique pour l'inscription.
+7. Enregistrer l'inscription dans SQLite avec le statut `WAITING` et sa date de création.
+
+Si toutes les conditions sont satisfaites, l'inscription est créée.
+
+### LeaveWaitlist
+
+Cette opération permet à un utilisateur de quitter une liste d'attente.
+
+Les étapes sont :
+
+1. Rechercher l'inscription à partir de son identifiant.
+2. Vérifier que l'inscription existe.
+3. Vérifier que son statut est encore `WAITING`.
+4. Mettre à jour son statut vers `CANCELLED`.
+5. Enregistrer la date d'annulation dans `cancelled_at`.
+
+Une inscription déjà notifiée ou annulée ne peut pas être annulée une seconde fois.
+
+**Contrôle d'autorisation à compléter :** le service devra également vérifier que l'utilisateur qui demande l'annulation est bien propriétaire de l'inscription.
+
+## 6. Repository : opérations de persistance
+
+Le Repository centralise les opérations SQL utilisées par le Service.
+
+| Méthode | Responsabilité |
+|---|---|
+| `createEntry()` | Créer une nouvelle inscription |
+| `findById()` | Rechercher une inscription par son identifiant |
+| `findWaitingEntry()` | Vérifier si un utilisateur attend déjà un livre |
+| `findWaitingByBook()` | Récupérer les inscriptions en attente d'un livre |
+| `findByUser()` | Récupérer les inscriptions d'un utilisateur |
+| `cancelEntry()` | Annuler une inscription |
+| `markAsNotified()` | Marquer une inscription comme notifiée |
+
+### Gestion de la concurrence
+
+La vérification des doublons dans le Service ne suffit pas à garantir l'unicité des inscriptions.
+
+Deux requêtes simultanées pourraient toutes les deux constater qu'aucune inscription n'existe, puis tenter d'en créer une.
+
+L'index UNIQUE partiel dans SQLite constitue donc une protection supplémentaire au niveau de la base de données.
+
+Les erreurs de contrainte doivent être interceptées dans le Service afin de retourner une réponse métier appropriée.
+
+## 7. Évolution événementielle avec Kafka
+
+Une fois le fonctionnement gRPC implémenté, le WaitlistService sera connecté à Kafka afin de réagir automatiquement lorsqu'un livre redevient disponible.
+
+Le scénario prévu est le suivant :
+
+1. Un utilisateur emprunte un livre : BookService passe son statut à `BORROWED`.
+2. L'utilisateur rejoint la liste d'attente via WaitlistService.
+3. L'emprunteur retourne le livre.
+4. BookService met à jour son statut vers `AVAILABLE`.
+5. BookService publie l'événement `BOOK_AVAILABLE` sur Kafka.
+6. WaitlistService consomme cet événement.
+7. WaitlistService récupère les utilisateurs dont les inscriptions sont encore `WAITING` pour ce livre.
+8. Les utilisateurs concernés sont transmis au NotificationService pour l'envoi des notifications.
+
+Le statut `NOTIFIED` permettra ensuite de suivre les inscriptions pour lesquelles une notification a été envoyée.
+
+**Important :** une notification ne constitue pas une réservation du livre. La disponibilité réelle reste gérée exclusivement par BookService, qui protège les opérations d'emprunt contre les accès concurrents.
+
+## 8. Architecture cible du WaitlistService
+
+```text
+                    API Gateway
+                         |
+                         v
+                  WaitlistService
+                         |
+             +-----------+-----------+
+             |           |           |
+             v           v           v
+          Handler     Service    Kafka Consumer
+                         |           ^
+                 +-------+-------+   |
+                 |               |   |
+                 v               v   |
+             UserService     BookService
+                gRPC            gRPC
+                                 |
+                                 |
+                           BOOK_AVAILABLE
+                                 |
+                                 v
+                               Kafka
+                                 |
+                                 v
+                         WaitlistService
+                                 |
+                                 v
+                       NotificationService
+```
+
+Cette architecture permet de séparer la gestion des inscriptions de la gestion du catalogue, des emprunts et de l'envoi des notifications.
+
+Elle favorise l'autonomie des microservices et l'utilisation d'une communication événementielle pour les traitements asynchrones.
 
 
-
-\## Authors
+\## Author
 
 Bakhta Nairouz Ben Hadj Slama
 
