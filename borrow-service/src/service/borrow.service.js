@@ -4,12 +4,17 @@ const { userClient, bookClient } = require("../grpc/borrow.clients");
 const borrowRepository = require("../repository/borrow.repository");
 
 // Convert UserService.GetUser callback into a Promise
+const grpc = require("@grpc/grpc-js");
+
 function getUser(userId) {
     return new Promise((resolve, reject) => {
-
         userClient.GetUser({ id: userId }, (error, response) => {
 
             if (error) {
+                if (error.code === grpc.status.NOT_FOUND) {
+                    return resolve(null);
+                }
+
                 return reject(error);
             }
 
@@ -201,8 +206,12 @@ async function returnBook(borrowId) {
         };
     }
 }
+async function getUserBorrows(userId) {
+    return borrowRepository.findByUserId(userId);
+}
 module.exports = {
     borrowBook,
-    returnBook
+    returnBook,
+    getUserBorrows
 };
 

@@ -6,7 +6,7 @@ const path = require("path");
 // Load User proto
 const userProtoPath = path.join(
     __dirname,
-    "../../../user-service/src/proto/user.proto"
+    "../../../user-service/proto/user.proto"
 );
 
 const userDefinition = protoLoader.loadSync(userProtoPath, {
@@ -22,7 +22,7 @@ const userProto = grpc.loadPackageDefinition(userDefinition).user;
 // Load Book proto
 const bookProtoPath = path.join(
     __dirname,
-    "../../../book-service/src/proto/book.proto"
+    "../../../book-service/proto/book.proto"
 );
 
 const bookDefinition = protoLoader.loadSync(bookProtoPath, {
