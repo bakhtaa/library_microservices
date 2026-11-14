@@ -1240,9 +1240,6 @@ This is a simplified implementation of the Saga pattern, where a compensating ac
 Each microservice owns its own database. BorrowService never accesses UserService's or BookService's database directly.
 ![alt text](image.png)
 
-## Authors
-Bakhta Nairouz Ben Hadj Slama
-
 
 \# Library Microservices System
 
@@ -3706,11 +3703,6 @@ Each microservice owns its own database. BorrowService never accesses UserServic
 
 
 
-\## Authors
-
-Bakhta Nairouz Ben Hadj Slama
-
-
 ---
 
 # 12. Évolution fonctionnelle : liste d'attente et rappels automatiques
@@ -4084,3 +4076,11 @@ Pour avancer progressivement et pouvoir tester chaque brique :
 7. **Fiabilité** : ajouter progressivement l'idempotence, les retries, le traitement des messages en échec et le Transactional Outbox.
 
 Cette progression permet de commencer par un événement simple et observable avant d'introduire les mécanismes de fiabilité plus avancés.
+
+
+
+
+\## Authors
+
+Bakhta Nairouz Ben Hadj Slama
+
