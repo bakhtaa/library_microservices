@@ -1859,7 +1859,35 @@ Cette architecture établit une séparation claire entre l'accès externe à l'A
 
 L'API Gateway fournit une interface unifiée, GraphQL permet une récupération et une agrégation flexibles des données, tandis que gRPC assure une communication structurée entre les services distribués.
 
+## Séparation des responsabilités dans les microservices
 
+Chaque microservice adopte une architecture en couches afin de séparer la logique métier des opérations d'accès aux données et de communication.
+
+- **Repository** : responsable de l'accès aux données. Il communique avec la base de données propre au microservice (SQLite dans l'implémentation actuelle) et exécute les opérations de persistance (INSERT, SELECT, UPDATE, DELETE).
+- **Service** : contient la logique métier du microservice. Il applique les règles de gestion, orchestre les opérations nécessaires et fait appel aux repositories ou aux clients d'autres microservices lorsque cela est nécessaire.
+- **Handler** : responsable de la couche de communication gRPC. Il reçoit les requêtes des clients, transmet les données aux méthodes correspondantes du Service et retourne les réponses gRPC.
+
+### Flux d'exécution
+
+```text
+       gRPC Client
+            |
+            v
+       gRPC Handler
+            |
+            v
+       Business Service
+            |
+       +----+----+
+       |         |
+       v         v
+   Repository  gRPC Client
+       |         |
+       v         v
+   Local DB   Other Microservice
+```
+
+Cette séparation permet de maintenir des responsabilités clairement définies, de faciliter les tests et de faire évoluer chaque couche indépendamment des autres.
 
 \# Borrow Service — Architecture et fonctionnement
 
