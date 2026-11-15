@@ -6,7 +6,7 @@ type User {
   id: ID!
   name: String!
   email: String!
-  accountStatus: String!
+  account_status: String!
 }
 
 type Book {

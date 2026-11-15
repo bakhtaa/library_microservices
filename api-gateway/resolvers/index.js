@@ -1,39 +1,33 @@
-const userClient = require("../grpc-clients/userClient");
+
+const userResolvers = require("./user.resolver");
+const bookResolvers = require("./book.resolver");
+const borrowResolvers = require("./borrow.resolver");
+const waitlistResolvers = require("./waitlist.resolver");
 
 module.exports = {
-  Query: {
-    users: () => {
-      return new Promise((resolve, reject) => {
-        userClient.GetUsers({}, (err, res) => {
-          if (err) return reject(err);
-          resolve(res.users);
-        });
-      });
+    Query: {
+        ...userResolvers.Query,
+        ...bookResolvers.Query,
+        ...borrowResolvers.Query,
+        ...waitlistResolvers.Query
     },
 
-    user: (_, args) => {
-      return new Promise((resolve, reject) => {
-        userClient.GetUser({ id: args.id }, (err, res) => {
-          if (err) return reject(err);
-          resolve(res.user);
-        });
-      });
+    Mutation: {
+        ...userResolvers.Mutation,
+        ...bookResolvers.Mutation,
+        ...borrowResolvers.Mutation,
+        ...waitlistResolvers.Mutation
     },
 
-    books: () => [],
-    book: () => null,
-    borrows: () => []
-  },
+    User: {
+        ...userResolvers.User
+    },
 
-  Mutation: {
-    createUser: (_, args) => {
-      return new Promise((resolve, reject) => {
-        userClient.CreateUser(args, (err, res) => {
-          if (err) return reject(err);
-          resolve(res.user);
-        });
-      });
+    Borrow: {
+        ...borrowResolvers.Borrow
+    },
+
+    WaitlistEntry: {
+        ...waitlistResolvers.WaitlistEntry
     }
-  }
-  
 };
