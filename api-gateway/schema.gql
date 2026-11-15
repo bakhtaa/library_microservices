@@ -1,34 +1,140 @@
+
+# TYPES
+
+
 type User {
-  id: String!
+  id: ID!
   name: String!
   email: String!
+  accountStatus: String!
 }
 
 type Book {
-  id: String!
+  id: ID!
   title: String!
   author: String!
-  available: Boolean!
-}
-
-type Borrow {
-  id: String!
-  userId: String!
-  bookId: String!
   status: String!
 }
 
-type Query {
-  users: [User]
-  user(id: String!): User
-
-  books: [Book]
-  book(id: String!): Book
-
-  borrows: [Borrow]
+type Borrow {
+  id: ID!
+  userId: ID!
+  bookId: ID!
+  status: String!
+  borrowedAt: String!
+  dueDate: String!
+  returnedAt: String
 }
 
+type WaitlistEntry {
+  id: ID!
+  userId: ID!
+  bookId: ID!
+  status: String!
+  createdAt: String!
+  notifiedAt: String
+  cancelledAt: String
+}
+
+
+# RESULT TYPES
+
+
+type UsersResult {
+  users: [User!]!
+  nextPageToken: String
+}
+
+type BorrowResult {
+  success: Boolean!
+  message: String!
+  borrow: Borrow
+}
+
+type BookOperationResult {
+  success: Boolean!
+  message: String!
+  book: Book
+}
+
+type WaitlistResult {
+  success: Boolean!
+  message: String!
+  entry: WaitlistEntry
+}
+
+# QUERIES
+
+
+type Query {
+
+  # UserService
+  users(
+    pageSize: Int
+    pageToken: String
+    status: String
+  ): UsersResult!
+
+  user(id: ID!): User
+
+  # BookService
+  books: [Book!]!
+  book(id: ID!): Book
+
+  # BorrowService
+  userBorrows(userId: ID!): [Borrow!]!
+}
+
+
+# MUTATIONS
+
 type Mutation {
-  createUser(name: String!, email: String!): User
-   deleteUser(id: ID!): Boolean
+
+  # UserService
+  createUser(
+    name: String!
+    email: String!
+  ): User
+
+  updateUser(
+    id: ID!
+    name: String!
+    email: String!
+  ): User
+
+  deleteUser(id: ID!): Boolean!
+
+  # BookService
+  createBook(
+    title: String!
+    author: String!
+  ): Book
+
+  updateBook(
+    id: ID!
+    title: String!
+    author: String!
+  ): Book
+
+  deleteBook(id: ID!): Boolean!
+
+  # BorrowService
+  borrowBook(
+    userId: ID!
+    bookId: ID!
+  ): BorrowResult!
+
+  returnBook(
+    borrowId: ID!
+  ): BorrowResult!
+
+  # WaitlistService
+  joinWaitlist(
+    userId: ID!
+    bookId: ID!
+  ): WaitlistResult!
+
+  leaveWaitlist(
+    entryId: ID!
+  ): WaitlistResult!
 }

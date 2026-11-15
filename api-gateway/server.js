@@ -3,10 +3,11 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 
+
 const { ApolloServer } = require("@apollo/server");
 const { expressMiddleware } = require("@as-integrations/express4");
 
-
+require("dotenv").config();
 const userClient = require("./grpc-clients/userClient");
 
 const resolvers = require("./resolvers");
