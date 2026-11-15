@@ -77,7 +77,453 @@ Sur le plan architectural, une API Gateway peut également jouer le rôle de **R
 Au-delà du routage, une API Gateway peut centraliser d'autres responsabilités, telles que l'authentification, la validation des requêtes, la limitation du nombre de requêtes (Rate Limiting) et la journalisation (Logging), selon son implémentation.
 
 Dans ce projet, la passerelle joue également un rôle important en exposant différentes modalités d'interaction avec le backend à travers REST et GraphQL.
+# API Gateway — Architecture et fonctionnement
 
+**L'API Gateway joue le rôle d'intermédiaire entre deux mondes qui utilisent des protocoles de communication différents.**
+
+- Le frontend communique avec l'API Gateway en GraphQL (via HTTP).
+- L'API Gateway communique avec les microservices en gRPC.
+- Chaque microservice communique avec sa propre base de données.
+
+Pour comprendre comment tout cela fonctionne, suivons le parcours d'une requête depuis le frontend jusqu'à la base de données, puis observons comment la réponse revient au frontend.
+
+# 1. Vue globale de l'architecture
+
+Prenons un exemple simple : le frontend souhaite récupérer la liste des utilisateurs.
+
+```text
+Frontend React
+      |
+      | GraphQL / HTTP
+      v
+API Gateway — Apollo Server
+      |
+      | gRPC
+      v
+UserService
+      |
+      v
+Handler gRPC
+      |
+      v
+Service métier
+      |
+      v
+Repository
+      |
+      v
+SQLite
+```
+
+Chaque composant intervient à un niveau différent :
+
+- **Frontend React :** formule une requête GraphQL pour demander les données dont il a besoin.
+- **API Gateway :** reçoit la requête, la valide et détermine quel resolver doit être exécuté.
+- **Resolver :** traduit l'opération GraphQL en un appel au client gRPC approprié.
+- **Client gRPC :** assure la communication réseau avec le microservice.
+- **Handler gRPC :** reçoit l'appel RPC et délègue le traitement à la couche métier.
+- **Service métier :** applique les règles métier et coordonne les opérations nécessaires.
+- **Repository :** gère les interactions avec la base de données.
+- **SQLite :** stocke les données du microservice.
+
+Mais attention : la communication ne s'arrête pas à la base de données. La réponse remonte ensuite dans le sens inverse.
+
+# 2. Déroulement détaillé : récupérer les utilisateurs
+
+Imaginons que React envoie cette requête :
+
+```graphql
+query {
+  users {
+    users {
+      id
+      name
+      email
+    }
+    nextPageToken
+  }
+}
+```
+
+Elle peut être envoyée par une requête HTTP POST à :
+
+```text
+http://localhost:3000/graphql
+```
+
+## Étape 1 — Apollo reçoit la requête
+
+Dans ton `server.js`, nous avons :
+
+```javascript
+const server = new ApolloServer({
+    typeDefs,
+    resolvers
+});
+```
+
+Nous fournissons deux éléments à Apollo :
+
+- `typeDefs` : notre schéma GraphQL (`schema.gql`).
+- `resolvers` : les fonctions qui implémentent les opérations définies dans ce schéma.
+
+Lorsque la requête arrive, Apollo analyse d'abord sa syntaxe et vérifie qu'elle respecte le schéma.
+
+Par exemple, si le frontend demande un champ qui n'existe pas dans notre schéma, Apollo retourne une erreur de validation.
+
+Il vérifie notamment :
+
+- Est-ce que `users` existe dans le type `Query` ?
+- Est-ce que `users` retourne bien un type contenant un champ `users` ?
+- Est-ce que `id`, `name` et `email` existent dans le type `User` ?
+
+Si la requête ne respecte pas le schéma, le resolver n'est pas exécuté.
+
+**Le schéma agit donc comme un contrat entre le frontend et l'API Gateway, mais également comme une première couche de validation.**
+
+## Étape 2 — Apollo trouve le resolver correspondant
+
+Une fois la requête validée, Apollo cherche la fonction correspondant à :
+
+```text
+Query.users
+```
+
+Dans notre architecture, elle se trouve dans :
+
+```text
+resolvers/
+    user.resolver.js
+```
+
+Voici notre resolver :
+
+```javascript
+users: async (_, args) => {
+    const response = await grpcCall(
+        userClient.GetUsers.bind(userClient),
+        {
+            page_size: args.pageSize || 0,
+            page_token: args.pageToken || "",
+            status: args.status || ""
+        }
+    );
+
+    return {
+        users: response.users,
+        nextPageToken: response.next_page_token
+    };
+}
+```
+
+Le resolver est une fonction JavaScript exécutée par Apollo.
+
+Il reçoit notamment trois paramètres :
+
+- `parent` : le résultat du resolver précédent (ici inutilisé, donc `_`).
+- `args` : les arguments fournis dans la requête GraphQL.
+- `context` : des informations partagées pendant l'exécution, comme l'utilisateur authentifié.
+
+Dans notre exemple, le resolver récupère les arguments éventuels de la requête et prépare un objet compatible avec le message attendu par le RPC `GetUsers`.
+
+Ensuite, il appelle le client gRPC du UserService.
+
+Il joue donc le rôle d'un **adaptateur entre GraphQL et gRPC**.
+
+## Étape 3 — Le client gRPC transmet la demande au UserService
+
+Ici, il faut bien comprendre une distinction.
+
+Notre fichier `userClient.js` ne contient pas la logique métier du UserService.
+
+Il représente un **client réseau qui sait comment communiquer avec le serveur gRPC**.
+
+Lorsque nous écrivons :
+
+```javascript
+userClient.GetUsers(request, callback);
+```
+
+Le client :
+
+1. Utilise la définition de `user.proto` pour connaître le RPC `GetUsers` et la structure de ses messages.
+2. Sérialise les données de la requête selon le format Protocol Buffers.
+3. Envoie l'appel au serveur gRPC à l'adresse configurée, ici `localhost:50051`.
+4. Attend la réponse du serveur.
+
+C'est à ce moment que la communication passe de GraphQL à gRPC.
+
+Le Gateway n'envoie donc pas directement une requête HTTP au UserService. Il utilise le protocole gRPC.
+
+**GraphQL est le protocole utilisé pour exposer notre API au frontend, tandis que gRPC est utilisé pour les communications internes entre nos services.**
+
+## Étape 4 — Le Handler du UserService reçoit l'appel
+
+Du côté du UserService, notre serveur gRPC a enregistré un handler pour chaque RPC défini dans `user.proto`.
+
+Le chemin est conceptuellement :
+
+```text
+gRPC Server
+    |
+    └── GetUsers
+          |
+          └── Handler.GetUsers()
+```
+
+Le handler reçoit la requête gRPC.
+
+Son rôle est de faire le lien entre le monde gRPC et le service métier.
+
+Par exemple, il peut ressembler à ceci :
+
+```javascript
+async function GetUsers(call, callback) {
+    try {
+        const result = await userService.getUsers(
+            call.request
+        );
+
+        callback(null, result);
+    } catch (error) {
+        callback(error);
+    }
+}
+```
+
+Le handler récupère les données de la requête à travers `call.request`, appelle le service métier, puis transmet le résultat au client gRPC à travers le callback.
+
+Il ne devrait pas contenir directement toutes les règles métier ni les requêtes SQL.
+
+Il délègue ces responsabilités à la couche appropriée.
+
+## Étape 5 — Le Service métier appelle le Repository
+
+Le service métier représente la logique propre au domaine User.
+
+Par exemple :
+
+```javascript
+async function getUsers(filters) {
+    return await userRepository.findAll(filters);
+}
+```
+
+Il peut appliquer des règles métier, gérer la pagination ou vérifier certains paramètres avant de faire appel au Repository.
+
+Le Repository s'occupe ensuite de l'accès aux données :
+
+```javascript
+async function findAll(filters) {
+    // Exécution de la requête SQLite
+}
+```
+
+Le Repository exécute la requête SQL et récupère les utilisateurs.
+
+C'est lui qui connaît les détails de la base de données.
+
+On obtient donc :
+
+```text
+UserService
+    |
+    v
+User Handler
+    |
+    v
+User Service métier
+    |
+    v
+User Repository
+    |
+    v
+SQLite
+```
+
+Petite précision : le mot *service* est utilisé à deux niveaux ici. Le UserService désigne le microservice dans son ensemble, tandis que `user.service.js` désigne sa couche métier.
+
+# 3. Maintenant, comment la réponse revient-elle ?
+
+C'est exactement le raisonnement inverse.
+
+Une fois les utilisateurs récupérés depuis SQLite, la réponse remonte progressivement à travers les différentes couches.
+
+1. **SQLite → Repository**
+
+   Le Repository récupère les lignes de la base de données et les transforme en objets JavaScript.
+
+2. **Repository → Service métier**
+
+   Le service récupère les données et applique éventuellement les traitements nécessaires.
+
+3. **Service métier → Handler gRPC**
+
+   Le handler récupère le résultat et construit la réponse correspondant au message Protobuf attendu.
+
+4. **Handler → Client gRPC du Gateway**
+
+   Le serveur gRPC sérialise la réponse et la transmet au client. Le callback de `userClient.GetUsers` est alors exécuté.
+
+5. **Client gRPC → Resolver GraphQL**
+
+   Notre fonction `grpcCall()` transforme le callback en Promise. Grâce à `await`, le resolver récupère directement la réponse.
+
+6. **Resolver → Apollo Server**
+
+   Le resolver retourne un objet contenant les utilisateurs et le token de pagination.
+
+7. **Apollo → Frontend React**
+
+   Apollo construit la réponse JSON GraphQL selon les champs demandés par le frontend et l'envoie au navigateur via HTTP.
+
+La réponse finale pourrait ressembler à ceci :
+
+```json
+{
+  "data": {
+    "users": {
+      "users": [
+        {
+          "id": "u1",
+          "name": "Alice",
+          "email": "alice@example.com"
+        },
+        {
+          "id": "u2",
+          "name": "Bob",
+          "email": "bob@example.com"
+        }
+      ],
+      "nextPageToken": ""
+    }
+  }
+}
+```
+
+# 4. Pourquoi séparer les Resolvers par microservice ?
+
+Nous avons choisi de conserver un seul fichier `schema.gql`, mais de répartir les resolvers dans plusieurs fichiers :
+
+```text
+api-gateway/
+│
+├── grpc-clients/
+│   ├── userClient.js
+│   ├── bookClient.js
+│   ├── borrowClient.js
+│   └── waitlistClient.js
+│
+├── resolvers/
+│   ├── user.resolver.js
+│   ├── book.resolver.js
+│   ├── borrow.resolver.js
+│   ├── waitlist.resolver.js
+│   └── index.js
+│
+├── schema.gql
+└── server.js
+```
+
+Pourquoi cette organisation ?
+
+Parce que chaque fichier de resolver correspond à un domaine métier :
+
+- `user.resolver.js` communique avec UserService.
+- `book.resolver.js` communique avec BookService.
+- `borrow.resolver.js` communique avec BorrowService.
+- `waitlist.resolver.js` communique avec WaitlistService.
+
+Le fichier `index.js` regroupe ensuite les différents resolvers pour les transmettre à Apollo Server.
+
+Cela permet de conserver une organisation claire sans multiplier les fichiers de schéma GraphQL.
+
+# 5. Une distinction importante : le Gateway ne contient pas la logique métier
+
+Prenons maintenant l'exemple d'une demande d'emprunt.
+
+Le frontend peut envoyer :
+
+```graphql
+mutation {
+  borrowBook(userId: "u1", bookId: "b1") {
+    success
+    message
+  }
+}
+```
+
+Le Gateway reçoit cette mutation, trouve le resolver `borrowBook` et transmet l'appel au BorrowService à travers son client gRPC.
+
+Mais il ne doit pas lui-même :
+
+- Vérifier si l'utilisateur existe.
+- Vérifier si le compte est actif.
+- Vérifier si le livre est disponible.
+- Réserver le livre.
+- Créer l'enregistrement de l'emprunt.
+- Gérer une éventuelle compensation si une opération échoue.
+
+Ces responsabilités appartiennent au BorrowService, qui coordonne les opérations avec UserService et BookService.
+
+Pourquoi ?
+
+Parce que **le Gateway est responsable de l'exposition et du routage des opérations, tandis que les microservices restent responsables de leur logique métier**.
+
+Si nous déplacions cette logique dans le Gateway, nous créerions un couplage entre l'API d'accès et les règles métier de notre application.
+
+# 6. GraphQL et gRPC : deux contrats indépendants
+
+Il faut enfin comprendre que GraphQL et gRPC possèdent chacun leur propre contrat.
+
+**Le contrat interne : les fichiers `.proto`**
+
+Chaque microservice définit ses propres méthodes RPC et structures de messages.
+
+Par exemple, BorrowService expose :
+
+```protobuf
+rpc GetUserBorrows (UserRequest)
+    returns (BorrowListResponse);
+```
+
+**Le contrat externe : le fichier `schema.gql`**
+
+Le Gateway expose une opération adaptée aux besoins du frontend :
+
+```graphql
+userBorrows(userId: ID!): [Borrow!]!
+```
+
+Ces deux contrats ne sont pas obligés d'avoir exactement les mêmes noms ou les mêmes structures.
+
+Le Gateway joue le rôle d'une couche d'adaptation entre eux.
+
+Cela permet notamment de faire évoluer l'API GraphQL sans devoir reproduire exactement les mêmes changements dans tous les contrats gRPC.
+
+# 7. Ce qu'il faut retenir
+
+Notre API Gateway repose donc sur une séparation claire des responsabilités :
+
+| Composant | Responsabilité |
+|---|---|
+| Frontend React | Formuler les requêtes GraphQL |
+| Apollo Server | Recevoir et valider les requêtes, exécuter les resolvers |
+| Schema GraphQL | Définir le contrat exposé au frontend |
+| Resolvers | Faire le lien entre GraphQL et les clients gRPC |
+| Clients gRPC | Assurer la communication avec les microservices |
+| Handlers gRPC | Recevoir les appels RPC et déléguer le traitement |
+| Services métier | Appliquer les règles métier |
+| Repositories | Gérer l'accès aux bases de données |
+| SQLite | Stocker les données propres à chaque microservice |
+
+**En résumé :**
+
+Le frontend n'a pas besoin de connaître l'existence de plusieurs microservices ni de savoir comment ils communiquent entre eux. Il utilise simplement l'API GraphQL exposée par le Gateway.
+
+Le Gateway traduit les demandes du frontend en appels gRPC adaptés, puis transforme les réponses des microservices en réponses GraphQL.
+
+Les microservices, quant à eux, conservent leur autonomie : chacun possède sa logique métier, son Repository et sa propre base de données.
 ### 2.2. Pourquoi GraphQL ? Résoudre le problème d'agrégation des données
 
 L'introduction d'une API Gateway permet de disposer d'un point d'entrée unique, mais elle ne résout pas nécessairement le problème de récupération de données provenant de plusieurs services.
@@ -4442,6 +4888,8 @@ The project combines local ACID guarantees with distributed consistency mechanis
 This approach allows each microservice to remain autonomous while maintaining overall business consistency across the distributed system.
 
 *Note: BASE is an architectural consistency model, not a replacement for local database transactions. The project progressively implements these distributed mechanisms as the architecture evolves.*
+\## Api Gateway Communication:
+![alt text](image-2.png)
 \## Author
 
 Bakhta Nairouz Ben Hadj Slama
