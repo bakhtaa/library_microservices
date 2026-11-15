@@ -798,7 +798,7 @@ Nous avons donc deux communications différentes dans notre architecture :
 Le frontend n'a pas besoin de connaître les détails de communication entre les microservices. Il envoie ses requêtes GraphQL à l'API Gateway, qui se charge ensuite d'appeler les services concernés avec leurs clients gRPC.
 
 Dans l'API Gateway, `grpcCall()` nous permet simplement d'utiliser `async/await` avec les méthodes gRPC basées sur les callbacks.
-
+![alt text](image-3.png)
 **À retenir :** une Promise est un mécanisme de gestion de l'asynchronisme en JavaScript. HTTP, HTTP/2 et gRPC sont des technologies de communication. Ce sont deux notions différentes : convertir un callback en Promise ne change absolument pas le protocole réseau utilisé.
 ## 4. Faire le lien entre la communication client et la communication interne
 
