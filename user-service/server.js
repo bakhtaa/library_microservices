@@ -5,6 +5,11 @@ const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const path = require("path");
 
+// Chargement des variables d'environnement du UserService
+require("dotenv").config({
+    path: path.join(__dirname, ".env")
+});
+
 const userHandler = require("./src/grpc/user.handler");
 
 // Chargement du contrat Protobuf
@@ -31,16 +36,19 @@ server.addService(
     userHandler
 );
 
+// Récupération du port depuis les variables d'environnement
+const port = process.env.GRPC_PORT || 50051;
+
 // Démarrage du serveur
 server.bindAsync(
-    "0.0.0.0:50051",
+    `0.0.0.0:${port}`,
     grpc.ServerCredentials.createInsecure(),
-    (error, port) => {
+    (error, boundPort) => {
         if (error) {
             console.error("Erreur lors du démarrage :", error);
             return;
         }
 
-        console.log(`👤 User Service running on port ${port}`);
+        console.log(`👤 User Service running on port ${boundPort}`);
     }
 );

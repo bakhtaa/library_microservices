@@ -50,6 +50,7 @@
     "defekt": "^9.3.0",
     "detect-libc": "^2.1.2",
     "dexie": "^4.0.10",
+    "dotenv": "^18.0.10",
     "emoji-regex": "^8.0.0",
     "end-of-stream": "^1.4.5",
     "env-paths": "^2.2.1",
