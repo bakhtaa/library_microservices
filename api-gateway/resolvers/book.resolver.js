@@ -1,0 +1,1 @@
+const bookClient = require("../grpc-clients/bookClient");

@@ -678,7 +678,128 @@ Il faut cependant préciser que tous les appels gRPC ne nécessitent pas de comm
 Dans ce projet, gRPC est utilisé comme mécanisme de communication interne entre l'API Gateway et les microservices.
 
 ---
+## Callback gRPC, Promises et différence avec Fetch API
 
+### 1. Pourquoi avons-nous créé `grpcCall()` ?
+
+Dans notre API Gateway, nous utilisons la bibliothèque `@grpc/grpc-js` pour communiquer avec les microservices.
+
+Les méthodes de nos clients gRPC utilisent une approche basée sur les **callbacks**.
+
+Par exemple :
+
+```javascript
+userClient.GetUser({ id: "123" }, (err, response) => {
+    if (err) {
+        console.error(err);
+        return;
+    }
+
+    console.log(response);
+});
+```
+
+La méthode `GetUser()` ne retourne pas directement une Promise contenant le résultat. Elle reçoit une fonction callback qui sera exécutée lorsque le serveur gRPC aura répondu.
+
+Cela signifie que nous ne pouvons pas simplement écrire :
+
+```javascript
+const response = await userClient.GetUser({ id: "123" });
+```
+
+En effet, `await` attend une Promise (ou un objet assimilé à une Promise). Or, notre méthode gRPC utilise ici un callback.
+
+Pour pouvoir utiliser `async/await` et rendre notre code plus lisible, nous avons donc créé une fonction intermédiaire :
+
+```javascript
+function grpcCall(method, request) {
+    return new Promise((resolve, reject) => {
+        method(request, (err, response) => {
+            if (err) {
+                return reject(err);
+            }
+
+            resolve(response);
+        });
+    });
+}
+```
+
+Cette fonction joue le rôle d'un **adaptateur entre le modèle Callback et le modèle Promise**.
+
+Son fonctionnement est simple :
+
+- Nous créons une Promise avec `new Promise()`.
+- Nous exécutons la méthode gRPC en lui fournissant son callback.
+- Si le callback reçoit une erreur, nous appelons `reject(err)`.
+- Si l'appel réussit, nous appelons `resolve(response)`.
+- La Promise passe alors à l'état *fulfilled* ou *rejected*.
+
+Nous pouvons désormais écrire :
+
+```javascript
+const response = await grpcCall(
+    userClient.GetUser.bind(userClient),
+    { id: "123" }
+);
+```
+
+Nous avons ainsi adapté l'interface de programmation de gRPC pour pouvoir utiliser `async/await`, sans modifier le fonctionnement interne de la communication gRPC.
+
+### 2. Pourquoi `fetch()` n'a-t-il pas besoin de cette conversion ?
+
+Dans le frontend, nous utilisons généralement `fetch()` pour communiquer avec une API HTTP.
+
+Par exemple :
+
+```javascript
+const response = await fetch("http://localhost:3000/users");
+const data = await response.json();
+```
+
+La différence est que `fetch()` expose directement une **API basée sur les Promises**.
+
+Il retourne nativement une Promise que nous pouvons attendre avec `await`. Nous n'avons donc pas besoin de créer nous-mêmes une fonction comme `grpcCall()` pour adapter un callback.
+
+Attention : cela ne signifie pas que `fetch()` convertit nécessairement un callback interne en Promise. Cela signifie simplement que son API a été conçue pour retourner une Promise.
+
+### 3. Pourquoi ne pouvons-nous pas simplement utiliser `fetch()` pour appeler nos microservices gRPC ?
+
+La différence ne concerne pas uniquement les Promises, mais surtout le **protocole de communication**.
+
+Dans notre architecture :
+
+- Le frontend communique avec l'API Gateway via GraphQL sur HTTP.
+- L'API Gateway communique avec les microservices via gRPC.
+- gRPC utilise HTTP/2 comme transport, avec des messages sérialisés en Protocol Buffers et un format d'échange spécifique.
+
+`fetch()` permet d'effectuer des requêtes HTTP et peut utiliser HTTP/1.1 ou HTTP/2 selon les possibilités de la plateforme et du serveur.
+
+Cependant, même si HTTP/2 est utilisé, cela ne transforme pas automatiquement une requête `fetch()` en appel gRPC.
+
+Un appel gRPC nécessite notamment :
+- Le format de communication défini par gRPC.
+- La sérialisation et la désérialisation des messages Protocol Buffers.
+- Le mécanisme d'échange gRPC, notamment ses métadonnées et ses trailers.
+
+`fetch()` ne prend pas nativement en charge ce protocole applicatif gRPC.
+
+Il existe toutefois une solution appelée **gRPC-Web**, qui permet aux navigateurs de communiquer avec des services gRPC à travers un proxy compatible. Ce n'est simplement pas la solution que nous avons choisie dans notre architecture actuelle.
+
+### 4. Pourquoi notre choix est-il cohérent ?
+
+Nous avons donc deux communications différentes dans notre architecture :
+
+| Communication | Technologie | API utilisée |
+|---|---|---|
+| Frontend → API Gateway | GraphQL sur HTTP | `fetch()` |
+| API Gateway → Microservices | gRPC sur HTTP/2 | Clients `@grpc/grpc-js` |
+
+Le frontend n'a pas besoin de connaître les détails de communication entre les microservices. Il envoie ses requêtes GraphQL à l'API Gateway, qui se charge ensuite d'appeler les services concernés avec leurs clients gRPC.
+
+Dans l'API Gateway, `grpcCall()` nous permet simplement d'utiliser `async/await` avec les méthodes gRPC basées sur les callbacks.
+
+**À retenir :** une Promise est un mécanisme de gestion de l'asynchronisme en JavaScript. HTTP, HTTP/2 et gRPC sont des technologies de communication. Ce sont deux notions différentes : convertir un callback en Promise ne change absolument pas le protocole réseau utilisé.
 ## 4. Faire le lien entre la communication client et la communication interne
 
 Nous disposons désormais de deux besoins de communication distincts :
