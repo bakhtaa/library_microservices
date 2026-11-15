@@ -4350,6 +4350,98 @@ Cette architecture permet de séparer la gestion des inscriptions de la gestion 
 Elle favorise l'autonomie des microservices et l'utilisation d'une communication événementielle pour les traitements asynchrones.
 
 
+
+![alt text](image-1.png)
+## Database Consistency: ACID and BASE in a Microservices Architecture
+
+### 1. Local Database Consistency: ACID
+
+Each microservice owns and manages its own database (**Database per Service pattern**).
+
+Each database is responsible for maintaining the integrity and consistency of its own data. For this purpose, we rely on the ACID properties provided by relational database systems such as SQLite.
+
+The four ACID properties are:
+
+- **Atomicity:** A transaction is executed entirely or not at all. If an operation fails, its changes can be rolled back.
+- **Consistency:** Every transaction must preserve database integrity constraints, such as `PRIMARY KEY`, `FOREIGN KEY`, `NOT NULL`, `CHECK`, and `UNIQUE`.
+- **Isolation:** Concurrent transactions must not produce inconsistent results. The database manages concurrent access according to its isolation guarantees.
+- **Durability:** Once a transaction is successfully committed, its changes are persisted, even if the service restarts.
+
+For example, in WaitlistService, we use:
+
+- `CHECK` constraints to restrict valid waitlist statuses (`WAITING`, `NOTIFIED`, `CANCELLED`).
+- A partial `UNIQUE` index to prevent the same user from joining the same book's waiting list multiple times while their entry is still `WAITING`.
+- SQL indexes to improve query performance.
+
+These constraints ensure that important integrity rules are enforced directly by the database, not only by the business logic.
+
+**Important:** ACID guarantees apply locally, within each microservice's own database. They do not automatically extend across multiple microservices.
+
+### 2. Distributed Consistency: BASE and Eventual Consistency
+
+In a distributed architecture, a business operation may involve several independent microservices, each managing its own database.
+
+For example, borrowing a book may involve:
+
+1. UserService: verify that the user exists and is active.
+2. BookService: reserve the requested book.
+3. BorrowService: create the borrow record.
+
+These operations cannot be covered by a single local SQLite transaction because each service owns a separate database.
+
+Instead of relying on a traditional distributed ACID transaction, we use distributed consistency mechanisms.
+
+The BASE model provides a useful way to understand this approach:
+
+- **Basically Available:** The system aims to remain available even when some distributed operations are temporarily unavailable.
+- **Soft State:** The state of the system may change over time as asynchronous events are processed.
+- **Eventual Consistency:** Data across different services may temporarily be out of sync, but is expected to converge toward a consistent state.
+
+To support distributed consistency, the architecture relies on the following mechanisms:
+
+| Mechanism | Responsibility |
+|---|---|
+| Saga Pattern | Coordinates operations across multiple services and defines compensating actions when a step fails. |
+| Transactional Outbox | Ensures that events are reliably published to Kafka after local database changes. |
+| Idempotency | Prevents duplicate processing of the same request or event. |
+| Retry Mechanism | Handles temporary failures by retrying operations. |
+| Kafka Events | Allows services to communicate asynchronously without direct coupling. |
+
+### 3. Overall Consistency Strategy
+
+The project combines local ACID guarantees with distributed consistency mechanisms.
+
+```text
+          MICROservices ARCHITECTURE
+                      
+    +----------------+  +----------------+
+    |  UserService   |  |  BookService   |
+    |                |  |                |
+    |  user.sqlite   |  |  book.sqlite   |
+    |                |  |                |
+    |      ACID      |  |      ACID      |
+    +----------------+  +----------------+
+              |                |
+              +-------+--------+
+                      |
+                Kafka / gRPC
+                      |
+              Distributed Layer
+                      |
+          Saga / Outbox / Idempotency
+                      |
+             Eventual Consistency
+```
+
+**Architectural principle:**
+
+- Use **ACID** to guarantee data integrity within each microservice.
+- Use **distributed consistency mechanisms** to coordinate operations across microservices.
+- Accept temporary inconsistencies when appropriate, while ensuring that services eventually converge toward a consistent state.
+
+This approach allows each microservice to remain autonomous while maintaining overall business consistency across the distributed system.
+
+*Note: BASE is an architectural consistency model, not a replacement for local database transactions. The project progressively implements these distributed mechanisms as the architecture evolves.*
 \## Author
 
 Bakhta Nairouz Ben Hadj Slama
