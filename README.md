@@ -35,6 +35,319 @@ L'objectif n'est pas simplement de diviser une application en plusieurs petits c
 Cette réflexion nous conduit à adopter une architecture microservices, reposant sur plusieurs technologies de communication, chacune répondant à un besoin architectural spécifique.
 
 ---
+# Library Management System — Microservices Architecture
+
+## 1. Vue d'ensemble
+
+Le projet **Library Management System** repose sur une architecture microservices. Chaque service possède une responsabilité métier bien définie et gère ses propres données.
+
+Les services communiquent entre eux à travers différents mécanismes selon leurs besoins :
+
+- **GraphQL** : interface de communication entre le frontend et l'API Gateway.
+- **gRPC** : communication synchrone entre microservices.
+- **Apache Kafka** : communication asynchrone basée sur les événements.
+- **REST / HTTP** : endpoints HTTP classiques, notamment pour les tests et les interfaces de diagnostic.
+
+## 2. Architecture globale
+
+```text
+                         FRONTEND
+                             |
+                             | GraphQL / HTTP
+                             |
+                             v
+                       API GATEWAY
+                             |
+              +--------------+--------------+
+              |              |              |
+              | gRPC         | gRPC         | gRPC
+              v              v              v
+         USER SERVICE   BOOK SERVICE   BORROW SERVICE
+              |              |              |
+              |              |              |
+              +--------------+--------------+
+                             |
+                       Événements Kafka
+                             |
+                             v
+                     APACHE KAFKA
+                             |
+             +---------------+----------------+
+             |                                |
+             v                                v
+       WAITLIST SERVICE                NOTIFICATION SERVICE
+             |                                |
+             |                                |
+             | gRPC                           | gRPC
+             v                                v
+        BOOK SERVICE                      USER SERVICE
+                                              |
+                                              v
+                                      EMAIL / PUSH PROVIDER
+                                              |
+                                              v
+                                        NOTIFICATIONS DB
+```
+
+*Schéma conceptuel : les flèches représentent les principaux échanges, pas nécessairement toutes les communications possibles.*
+
+## 3. Responsabilités des microservices
+
+| Service | Responsabilité |
+|---|---|
+| **API Gateway** | Point d'entrée du frontend. Expose l'API GraphQL et distribue les opérations vers les microservices. |
+| **UserService** | Gestion des utilisateurs et de leurs informations. |
+| **BookService** | Gestion du catalogue, des livres et de leur disponibilité. |
+| **BorrowService** | Gestion des emprunts, des retours et des dates limites. |
+| **WaitlistService** | Gestion des listes d'attente lorsqu'un livre n'est pas disponible. |
+| **NotificationService** | Gestion des notifications, des rappels et des campagnes promotionnelles. |
+
+Chaque microservice possède sa propre base de données. Un service ne doit pas accéder directement à la base de données d'un autre service.
+
+## 4. Les mécanismes de communication
+
+### 4.1 GraphQL — Frontend vers API Gateway
+
+GraphQL constitue l'interface exposée au frontend.
+
+Le frontend envoie une requête GraphQL à l'API Gateway, qui utilise ensuite les clients gRPC pour communiquer avec les services concernés.
+
+Exemple :
+
+```graphql
+query {
+    getBooks {
+        id
+        title
+        author
+        available
+    }
+}
+```
+
+L'avantage est de permettre au frontend de demander précisément les données dont il a besoin.
+
+### 4.2 gRPC — Communication synchrone
+
+gRPC est utilisé lorsqu'un microservice doit appeler une opération d'un autre microservice et obtenir une réponse.
+
+Exemple : BorrowService doit vérifier qu'un utilisateur existe avant de créer un emprunt.
+
+```text
+BorrowService
+      |
+      | GetUser(userId)
+      | gRPC
+      v
+UserService
+      |
+      | UserResponse
+      v
+BorrowService
+```
+
+Les contrats de communication sont définis dans des fichiers `.proto`, qui décrivent les services RPC, les méthodes et les messages échangés.
+
+### 4.3 Apache Kafka — Communication asynchrone
+
+Kafka permet aux microservices de communiquer à travers des événements sans avoir besoin de s'appeler directement.
+
+Un service publie un événement dans un topic. Les autres services intéressés le consomment indépendamment.
+
+Topics prévus :
+
+| Topic | Événements |
+|---|---|
+| `book-events` | `BOOK_AVAILABLE` |
+| `borrow-events` | `BORROW_CREATED`, `BORROW_RETURNED` |
+| `notification-events` | `NOTIFICATION_REQUESTED`, `CAMPAIGN_CREATED` |
+
+Exemple :
+
+```text
+BookService
+     |
+     | BOOK_AVAILABLE
+     v
+   Kafka
+     |
+     v
+WaitlistService
+```
+
+BookService n'a pas besoin de connaître les détails internes de WaitlistService. Il publie simplement un événement indiquant qu'un livre est disponible.
+
+### 4.4 REST / HTTP — Endpoints classiques
+
+REST utilise des requêtes HTTP classiques avec des méthodes telles que :
+
+- `GET`
+- `POST`
+- `PUT`
+- `DELETE`
+
+Dans notre projet, NotificationService expose temporairement des endpoints HTTP pour tester son fonctionnement indépendamment de Kafka.
+
+Exemples :
+
+| Méthode | Endpoint | Fonction |
+|---|---|---|
+| GET | `/health` | Vérifier l'état du service |
+| POST | `/notifications` | Créer et envoyer une notification |
+| GET | `/notifications/:id` | Consulter une notification |
+
+Ces endpoints utilisent Express et échangent des données JSON.
+
+Ils ne remplacent pas Kafka ni gRPC : ils constituent une interface HTTP complémentaire.
+
+## 5. Scénarios métier
+
+### 5.1 Un livre devient disponible
+
+Lorsqu'un livre emprunté est retourné :
+
+1. BorrowService demande à BookService de rendre le livre disponible.
+2. BookService met à jour son état.
+3. BookService publie `BOOK_AVAILABLE` dans `book-events`.
+4. WaitlistService consomme cet événement.
+5. WaitlistService recherche les utilisateurs en attente dans sa propre base de données.
+6. WaitlistService publie un événement `NOTIFICATION_REQUESTED` pour chaque notification à envoyer.
+7. NotificationService consomme ces événements et envoie les notifications.
+
+```text
+BorrowService
+      |
+      v
+BookService
+      |
+      | BOOK_AVAILABLE
+      v
+Kafka (book-events)
+      |
+      v
+WaitlistService
+      |
+      | NOTIFICATION_REQUESTED
+      v
+Kafka (notification-events)
+      |
+      v
+NotificationService
+      |
+      v
+Email / Push
+```
+
+**Principe important :** WaitlistService détermine qui doit être notifié. NotificationService détermine comment envoyer la notification.
+
+Une notification ne réserve pas automatiquement le livre. BookService reste responsable de contrôler la disponibilité lors d'un nouvel emprunt.
+
+### 5.2 Rappel avant la date limite d'un emprunt
+
+1. BorrowService crée un emprunt.
+2. BorrowService publie `BORROW_CREATED` dans `borrow-events`.
+3. NotificationService consomme l'événement.
+4. NotificationService crée un rappel dans sa propre base de données.
+5. Un worker vérifie régulièrement les rappels arrivés à échéance.
+6. Le provider envoie la notification.
+
+Si l'emprunt est retourné avant la date limite :
+
+1. BorrowService publie `BORROW_RETURNED`.
+2. NotificationService consomme l'événement.
+3. Le rappel correspondant est annulé.
+
+```text
+BorrowService
+      |
+      | BORROW_CREATED
+      v
+Kafka (borrow-events)
+      |
+      v
+NotificationService
+      |
+      v
+Reminders DB
+      |
+      v
+Reminder Worker
+      |
+      v
+Email / Push
+```
+
+### 5.3 Campagne promotionnelle — Black Friday
+
+1. Un administrateur demande la création d'une campagne.
+2. L'API Gateway transmet la demande à NotificationService.
+3. NotificationService récupère les utilisateurs ciblés auprès de UserService, via gRPC.
+4. NotificationService crée et traite la campagne.
+5. Les notifications sont envoyées aux utilisateurs concernés.
+
+```text
+Admin / Frontend
+       |
+       v
+ API Gateway
+       |
+       | Demande de campagne
+       v
+NotificationService
+       |
+       | GetUsersByCriteria()
+       | gRPC
+       v
+  UserService
+       |
+       | Liste des utilisateurs
+       v
+NotificationService
+       |
+       v
+Email / Push
+```
+
+## 6. Rôle des technologies
+
+| Technologie | Rôle dans le projet |
+|---|---|
+| Node.js | Environnement d'exécution des microservices. |
+| Express | Exposition des endpoints HTTP. |
+| GraphQL | API destinée au frontend. |
+| gRPC | Communication synchrone entre services. |
+| Protocol Buffers | Définition des contrats gRPC. |
+| Apache Kafka | Transport asynchrone des événements. |
+| SQLite | Stockage indépendant des données de chaque service. |
+| Docker | Conteneurisation des microservices et de Kafka. |
+| Keycloak | Gestion centralisée de l'authentification et des identités. |
+
+## 7. Principes architecturaux
+
+L'architecture repose sur plusieurs principes :
+
+- **Single Responsibility** : chaque microservice possède une responsabilité métier précise.
+- **Database per Service** : chaque service possède ses propres données.
+- **Loose Coupling** : les services dépendent le moins possible de l'implémentation interne des autres.
+- **Synchronous Communication** : gRPC est utilisé lorsqu'une réponse immédiate est nécessaire.
+- **Asynchronous Communication** : Kafka permet de découpler les services grâce aux événements.
+- **Eventual Consistency** : les données distribuées peuvent être mises à jour progressivement.
+- **Idempotency** : un événement consommé plusieurs fois ne doit pas provoquer plusieurs fois le même effet métier.
+
+## 8. Évolution future : application mobile
+
+L'architecture pourra accueillir une application mobile sans devoir modifier les responsabilités métier des microservices.
+
+Deux technologies pourront notamment être intégrées :
+
+- **Firebase Cloud Messaging (FCM)** : envoi de notifications push vers les appareils mobiles.
+- **RxDB** : stockage local côté application mobile, avec des possibilités de fonctionnement offline et de synchronisation.
+
+Ces technologies sont complémentaires de Kafka et de SQLite : elles ne les remplacent pas.
+
+---
+
+**Conclusion :** GraphQL expose les fonctionnalités au frontend, gRPC permet les appels synchrones entre services, Kafka transporte les événements asynchrones et chaque microservice conserve la maîtrise de ses propres données. Cette séparation permet de construire un système modulaire et évolutif.
 
 ## 2. Du client à la communication entre services
 
@@ -5011,6 +5324,8 @@ This approach allows each microservice to remain autonomous while maintaining ov
 *Note: BASE is an architectural consistency model, not a replacement for local database transactions. The project progressively implements these distributed mechanisms as the architecture evolves.*
 \## Api Gateway Communication:
 ![alt text](image-2.png)
+##dockerization
+![alt text](image-4.png)
 \## Author
 
 Bakhta Nairouz Ben Hadj Slama
