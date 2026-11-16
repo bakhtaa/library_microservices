@@ -1,0 +1,6 @@
+
+node_modules
+.env
+borrow.sqlite
+npm-debug.log
+.git
