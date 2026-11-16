@@ -6,7 +6,7 @@ const path = require("path");
 // 1. Load UserService proto
 const protoPath = path.join(
     __dirname,
-    "../../user-service/proto/user.proto"
+    "../proto/user.proto"
 );
 
 const packageDef = protoLoader.loadSync(protoPath, {

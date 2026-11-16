@@ -6,7 +6,7 @@ const path = require("path");
 // 1. Charger le fichier borrow.proto
 const protoPath = path.join(
     __dirname,
-    "../../borrow-service/proto/borrow.proto"
+    "../proto/borrow.proto"
 );
 
 const packageDef = protoLoader.loadSync(protoPath, {

@@ -6,7 +6,7 @@ const path = require("path");
 // 1. Charger le fichier waitlist.proto
 const protoPath = path.join(
     __dirname,
-    "../../waitlist-service/proto/waitlist.proto"
+    "../proto/waitlist.proto"
 );
 
 const packageDef = protoLoader.loadSync(protoPath, {

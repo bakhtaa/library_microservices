@@ -6,7 +6,7 @@ const path = require("path");
 // 1. Charger le fichier book.proto
 const protoPath = path.join(
     __dirname,
-    "../../book-service/proto/book.proto"
+    "../proto/book.proto"
 );
 
 const packageDef = protoLoader.loadSync(protoPath, {
