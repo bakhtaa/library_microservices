@@ -5,6 +5,7 @@ const express = require("express");
 
 const { initializeDatabase } = require("./src/config/database");
 const notificationService = require("./src/services/notification.service");
+const { startConsumer } = require("./src/kafka/consumer");
 
 const app = express();
 
@@ -86,10 +87,13 @@ app.get("/notifications/:id", async (req, res) => {
 
 async function start() {
     try {
-        // Initialize database before accepting requests
+        // 1. Initialize database
         await initializeDatabase();
 
-        // Start HTTP server
+        // 2. Start Kafka Consumer
+        await startConsumer();
+
+        // 3. Start HTTP server
         app.listen(PORT, "0.0.0.0", () => {
             console.log(`NotificationService running on port ${PORT}`);
         });

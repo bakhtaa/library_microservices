@@ -1,6 +1,9 @@
 
 const { Kafka } = require("kafkajs");
 
+const { getUser } = require("../grpc/user.client");
+const notificationService = require("../services/notification.service");
+
 const kafka = new Kafka({
     clientId: "notification-service",
     brokers: [
@@ -12,6 +15,40 @@ const consumer = kafka.consumer({
     groupId: "notification-service-group"
 });
 
+async function handleNotificationRequested(event) {
+    // 1. Vérifier les données nécessaires
+    const { userId, title, message } = event;
+
+    if (!userId || !title || !message) {
+        throw new Error("Invalid NOTIFICATION_REQUESTED event");
+    }
+
+    // 2. Récupérer l'utilisateur auprès de UserService
+    const user = await getUser(userId);
+
+    if (!user || !user.email) {
+        throw new Error("User not found or email unavailable");
+    }
+
+    console.log("User retrieved from UserService:", user.email);
+
+    // 3. Créer et envoyer la notification
+    const result = await notificationService.sendNotification({
+        userId: user.id,
+        type: event.type,
+        title,
+        message,
+        recipientEmail: user.email
+    });
+
+    // 4. Vérifier le résultat
+    if (result.status !== "SENT") {
+        throw new Error(result.message || "Notification sending failed");
+    }
+
+    console.log("Notification successfully processed:", result);
+}
+
 async function startConsumer() {
     try {
         await consumer.connect();
@@ -19,48 +56,38 @@ async function startConsumer() {
         console.log("NotificationService connected to Kafka");
 
         await consumer.subscribe({
-            topics: [
-                "borrow-events",
-                "notification-events"
-            ],
+            topics: ["notification-events"],
             fromBeginning: false
         });
 
-        console.log("Subscribed to Kafka topics");
+        console.log("Subscribed to notification-events");
 
         await consumer.run({
-            eachMessage: async ({
-                topic,
-                partition,
-                message
-            }) => {
-                // A message can have a null value.
-                if (!message.value) {
+            eachMessage: async ({ topic, partition, message }) => {
+                const rawMessage = message.value?.toString();
+
+                if (!rawMessage?.trim()) {
                     console.warn("Received empty Kafka message");
                     return;
                 }
 
-                const rawMessage = message.value.toString();
-
                 console.log("\n========== KAFKA EVENT ==========");
                 console.log("Topic:", topic);
                 console.log("Partition:", partition);
-                console.log("Key:", message.key?.toString());
                 console.log("Message:", rawMessage);
                 console.log("=================================\n");
 
                 try {
                     const event = JSON.parse(rawMessage);
 
-                    console.log("Event received:", event);
-
-                    // Event processing will be added here.
+                    if (event.type === "NOTIFICATION_REQUESTED") {
+                        await handleNotificationRequested(event);
+                    } else {
+                        console.log("Unsupported event type:", event.type);
+                    }
 
                 } catch (error) {
-                    console.error(
-                        "Invalid JSON event:",
-                        error.message
-                    );
+                    console.error("Event processing failed:", error.message);
                 }
             }
         });
