@@ -6,6 +6,8 @@ const path = require("path");
 const waitlistHandler = require("./src/grpc/waitlist.handler");
 const { initializeDatabase } = require("./src/config/database");
 
+const {connectProducer}= require("./src/kafka/producer");
+
 // 1. Load the proto file
 const protoPath = path.join(__dirname, "proto/waitlist.proto");
 
@@ -33,6 +35,8 @@ server.addService(
 async function main() {
     try {
         await initializeDatabase();
+ // 2. Connect Kafka Producer
+await connectProducer();
 
         server.bindAsync(
             "0.0.0.0:50054",

@@ -5,9 +5,8 @@ const grpc = require("@grpc/grpc-js");
 const { userClient, bookClient } =
     require("../grpc/waitlist.clients");
 
-const waitlistRepository =
-    require("../repository/waitlist.repository");
-
+const waitlistRepository =require("../repository/waitlist.repository");
+const { publishEvent } = require("../kafka/producer");
 // Convert UserService.GetUser callback into a Promise
 function getUser(userId) {
     return new Promise((resolve, reject) => {
@@ -153,7 +152,55 @@ async function leaveWaitlist(entryId) {
     };
 }
 
+async function processBookAvailable(event) {
+
+    // 1. Find all users waiting for this book
+    const entries =
+        await waitlistRepository.findWaitingByBook(event.bookId);
+
+    if (entries.length === 0) {
+        console.log(`No users waiting for book ${event.bookId}`);
+        return;
+    }
+
+    // 2. Process each waiting entry
+    for (const entry of entries) {
+
+        // 3. Build a notification event for this user
+        const notificationEvent = {
+            eventId: randomUUID(),
+            type: "NOTIFICATION_REQUESTED",
+            waitlistId: entry.id,
+            userId: entry.user_id,
+            bookId: event.bookId,
+            title: event.title,
+            author: event.author,
+            requestedAt: new Date().toISOString()
+        };
+
+        // 4. Publish the notification event
+        await publishEvent(
+            "notification-events",
+            notificationEvent
+        );
+
+        // 5. Mark the waitlist entry as notified
+        const updatedEntry =
+            await waitlistRepository.markAsNotified(
+                entry.id,
+                new Date().toISOString()
+            );
+
+        if (!updatedEntry) {
+            console.warn(
+                `Could not mark waitlist entry ${entry.id} as NOTIFIED`
+            );
+        }
+    }
+}
+
 module.exports = {
     joinWaitlist,
-    leaveWaitlist
+    leaveWaitlist,
+    processBookAvailable
 };
