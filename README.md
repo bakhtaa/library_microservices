@@ -5326,6 +5326,198 @@ This approach allows each microservice to remain autonomous while maintaining ov
 ![alt text](image-2.png)
 ##dockerization
 ![alt text](image-4.png)
+![alt text](image-5.png)
+![alt text](image-6.png)
+![alt text](image-7.png)
+![alt text](image-8.png)
+## 📚 Scenario 1: Book Availability Notification
+
+### 1. Overview
+
+This scenario describes how the system notifies users when a book they are waiting for becomes available again.
+
+It relies on **event-driven communication using Apache Kafka** to ensure loose coupling between microservices. Each service is responsible for its own business logic and database, while Kafka enables asynchronous communication between them.
+
+The notification workflow involves four microservices:
+
+- **BorrowService**: Manages book borrowing and returns.
+- **BookService**: Manages the book catalog and availability.
+- **WaitlistService**: Manages users waiting for unavailable books.
+- **NotificationService**: Handles notification creation and delivery.
+
+### 2. Workflow
+
+The process starts when a borrowed book is returned.
+
+1. **BorrowService – Book Return**
+   - A user returns a borrowed book.
+   - BorrowService updates the borrowing record.
+   - It publishes a `BORROW_RETURNED` event to the `borrow-events` Kafka topic.
+
+2. **BookService – Availability Update**
+   - BookService consumes the `BORROW_RETURNED` event.
+   - It retrieves the corresponding book using its `bookId`.
+   - It updates the book's availability in its own database.
+   - Once the book becomes available, BookService publishes a `BOOK_AVAILABLE` event to the `book-events` topic.
+
+3. **WaitlistService – Waiting Users Identification**
+   - WaitlistService consumes the `BOOK_AVAILABLE` event.
+   - It retrieves the users registered on the waiting list for that book.
+   - It publishes a `NOTIFICATION_REQUESTED` event for each user to the `notification-events` topic.
+
+4. **NotificationService – Notification Delivery**
+   - NotificationService consumes the `NOTIFICATION_REQUESTED` event.
+   - It retrieves the recipient's information, particularly their email address, from UserService through gRPC.
+   - It creates and stores the notification in its own SQLite database.
+   - It delegates email delivery to its Email Provider.
+   - Once the email is successfully sent, the notification status is updated to `SENT`.
+
+### 3. Architecture Diagram
+
+```mermaid
+flowchart TD
+    A["User returns a borrowed book"] --> B["BorrowService"]
+    B --> C["Publish BORROW_RETURNED"]
+    C --> D[("Kafka: borrow-events")]
+
+    D --> E["BookService Consumer"]
+    E --> F["Update book availability"]
+    F --> G["Publish BOOK_AVAILABLE"]
+    G --> H[("Kafka: book-events")]
+
+    H --> I["WaitlistService Consumer"]
+    I --> J["Retrieve waiting users"]
+    J --> K["Publish NOTIFICATION_REQUESTED"]
+    K --> L[("Kafka: notification-events")]
+
+    L --> M["NotificationService Consumer"]
+    M --> N["Get user information via gRPC"]
+    N <--> O["UserService"]
+    M --> P["Save notification in SQLite"]
+    P --> Q["Email Provider"]
+    Q --> R["Notify the user"]
+    R --> S["Update status to SENT"]
+```
+
+### 4. Kafka Events
+
+The workflow relies on three main domain events.
+
+#### 4.1 BORROW_RETURNED
+
+**Producer:** BorrowService  
+**Consumer:** BookService  
+**Topic:** `borrow-events`
+
+Published when a borrowed book is returned.
+
+Example payload:
+
+```json
+{
+  "eventId": "return-001",
+  "type": "BORROW_RETURNED",
+  "borrowId": "borrow-123",
+  "bookId": "book-456",
+  "userId": "user-789"
+}
+```
+
+#### 4.2 BOOK_AVAILABLE
+
+**Producer:** BookService  
+**Consumer:** WaitlistService  
+**Topic:** `book-events`
+
+Published when a book becomes available again.
+
+Example payload:
+
+```json
+{
+  "eventId": "available-001",
+  "type": "BOOK_AVAILABLE",
+  "bookId": "book-456"
+}
+```
+
+#### 4.3 NOTIFICATION_REQUESTED
+
+**Producer:** WaitlistService  
+**Consumer:** NotificationService  
+**Topic:** `notification-events`
+
+Published for each user waiting for the available book.
+
+Example payload:
+
+```json
+{
+  "eventId": "notification-001",
+  "type": "NOTIFICATION_REQUESTED",
+  "userId": "user-789",
+  "bookId": "book-456",
+  "title": "Your requested book is available!",
+  "message": "The book you were waiting for is now available."
+}
+```
+
+### 5. Communication Patterns
+
+Two communication mechanisms are used in this scenario:
+
+| Communication | Technology | Purpose |
+|---|---|---|
+| Asynchronous communication | Apache Kafka | Exchange domain events between microservices |
+| Synchronous communication | gRPC | Retrieve user information from UserService |
+
+Kafka allows services to react to business events without directly depending on each other's internal implementation.
+
+gRPC is used by NotificationService to retrieve the recipient's email address using their `userId`.
+
+### 6. Database Ownership
+
+Each microservice manages its own data:
+
+| Microservice | Data managed |
+|---|---|
+| BorrowService | Borrowing records and return information |
+| BookService | Book catalog and availability |
+| WaitlistService | Waiting lists and user-book associations |
+| NotificationService | Notifications, delivery status and notification history |
+| UserService | User profiles and contact information |
+
+No microservice directly accesses another microservice's database.
+
+### 7. Design Principles
+
+This scenario demonstrates several microservice architecture principles:
+
+- **Loose Coupling:** Services communicate through events instead of directly depending on each other's internal implementation.
+- **Single Responsibility:** Each microservice owns a specific business capability.
+- **Database per Service:** Each service controls its own persistence layer.
+- **Asynchronous Processing:** Kafka allows services to process events independently.
+- **Service Autonomy:** A service can evolve its internal implementation without requiring changes to other services, provided its communication contract remains compatible.
+- **Eventual Consistency:** Because events are processed asynchronously, changes propagate between services over time rather than through a single distributed transaction.
+
+### 8. Implementation Status
+
+| Component | Status |
+|---|---|
+| NotificationService Kafka Consumer | Implemented and tested |
+| NotificationService → UserService gRPC integration | Implemented and tested |
+| Notification persistence in SQLite | Implemented and tested |
+| Email Provider (simulation) | Implemented and tested |
+| BorrowService event publication | Pending |
+| BookService Kafka Consumer and Producer | Pending |
+| WaitlistService Kafka Consumer and Producer | Pending |
+| End-to-end scenario integration test | Pending |
+
+**Note:** The notification delivery component has been tested independently using a manually published Kafka event. The complete workflow will be validated once the BorrowService, BookService and WaitlistService event integrations are implemented.
+![alt text](image-9.png)
+![alt text](image-10.png)
+![alt text](image-11.png)
+![alt text](image-12.png)
 \## Author
 
 Bakhta Nairouz Ben Hadj Slama
