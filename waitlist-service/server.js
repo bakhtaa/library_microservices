@@ -5,7 +5,7 @@ const path = require("path");
 
 const waitlistHandler = require("./src/grpc/waitlist.handler");
 const { initializeDatabase } = require("./src/config/database");
-
+const { startConsumer } = require("./src/kafka/consumer");
 const {connectProducer}= require("./src/kafka/producer");
 
 // 1. Load the proto file
@@ -37,7 +37,7 @@ async function main() {
         await initializeDatabase();
  // 2. Connect Kafka Producer
 await connectProducer();
-
+await startConsumer();
         server.bindAsync(
             "0.0.0.0:50054",
             grpc.ServerCredentials.createInsecure(),
