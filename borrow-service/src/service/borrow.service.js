@@ -1,18 +1,15 @@
-
-const { userClient, bookClient } = require("../grpc/borrow.clients");
-
+﻿const { userClient, bookClient } = require("../grpc/borrow.clients");
 const borrowRepository = require("../repository/borrow.repository");
+const { publishEvent } = require("../kafka/producer");
 
-// Convert UserService.GetUser callback into a Promise
 const grpc = require("@grpc/grpc-js");
+const { randomUUID } = require("crypto");
 
 function getUser(userId) {
     return new Promise((resolve, reject) => {
-
         console.log("User ID sent to UserService:", userId);
 
         userClient.GetUser({ id: userId }, (error, response) => {
-
             if (error) {
                 console.error("GetUser error:", error);
                 console.log("gRPC error code:", error.code);
@@ -32,38 +29,23 @@ function getUser(userId) {
     });
 }
 
-// Convert BookService.BorrowBook callback into a Promise
 function reserveBook(bookId) {
     return new Promise((resolve, reject) => {
-
         bookClient.BorrowBook({ id: bookId }, (error, response) => {
-
-            if (error) {
-                return reject(error);
-            }
-
+            if (error) return reject(error);
             resolve(response);
         });
     });
 }
 
-// Convert BookService.ReturnBook callback into a Promise
 function releaseBook(bookId) {
     return new Promise((resolve, reject) => {
-
         bookClient.ReturnBook({ id: bookId }, (error, response) => {
-
-            if (error) {
-                return reject(error);
-            }
-
+            if (error) return reject(error);
             resolve(response);
         });
     });
 }
-
-const { randomUUID } = require("crypto");
-
 
 async function borrowBook(userId, bookId) {
     let bookReserved = false;
@@ -173,17 +155,7 @@ async function returnBook(borrowId) {
             };
         }
 
-        // 3. Release the book through BookService
-        const release = await releaseBook(borrow.book_id);
-
-        if (!release.success) {
-            return {
-                success: false,
-                message: release.message
-            };
-        }
-
-        // 4. Update the borrow record
+        // 3. Update the borrow record in our database
         const returnedAt = new Date().toISOString();
 
         const updatedBorrow =
@@ -198,6 +170,17 @@ async function returnBook(borrowId) {
                 message: "Unable to update the borrow record"
             };
         }
+
+        // 4. Publish BORROW_RETURNED event
+        const event = {
+            eventId: randomUUID(),
+            type: "BORROW_RETURNED",
+            borrowId: updatedBorrow.id,
+            bookId: updatedBorrow.book_id,
+            returnedAt: updatedBorrow.returned_at
+        };
+
+        await publishEvent("borrow-events", event);
 
         // 5. Return the result
         return {
@@ -215,12 +198,13 @@ async function returnBook(borrowId) {
         };
     }
 }
+
 async function getUserBorrows(userId) {
     return borrowRepository.findByUserId(userId);
 }
+
 module.exports = {
     borrowBook,
     returnBook,
     getUserBorrows
 };
-
