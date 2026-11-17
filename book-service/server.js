@@ -5,7 +5,8 @@ const path = require("path");
 
 const bookHandler = require("./src/grpc/book.handler");
 const { initializeDatabase } = require("./src/config/database");
-
+const { startConsumer } = require("./src/kafka/consumer");
+const { connectProducer } = require("./src/kafka/producer");
 // Charger le fichier proto
 const packageDef = protoLoader.loadSync(
     path.join(__dirname, "proto/book.proto"),
@@ -22,18 +23,22 @@ const bookProto = grpc.loadPackageDefinition(packageDef).book;
 
 // Créer le serveur gRPC
 const server = new grpc.Server();
-
-// Enregistrer les méthodes du service
-server.addService(
+  server.addService(
     bookProto.BookService.service,
     bookHandler
 );
-
-// Démarrer le serveur après l'initialisation de la DB
+// Démarrer les services
 async function startServer() {
     try {
+        // 1. Initialiser la base de données
         await initializeDatabase();
+        // 2. Connecter le producteur Kafka
+        await connectProducer();
+        // 2. Connecter le consumer Kafka
+        await startConsumer();
 
+     
+        // 3. Démarrer le serveur gRPC
         server.bindAsync(
             "0.0.0.0:50052",
             grpc.ServerCredentials.createInsecure(),
@@ -43,7 +48,7 @@ async function startServer() {
                     return;
                 }
 
-                console.log(`📚 Book Service running on port ${port}`);
+                console.log(`Book Service running on port ${port}`);
             }
         );
 
