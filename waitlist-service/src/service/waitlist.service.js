@@ -167,16 +167,16 @@ async function processBookAvailable(event) {
     for (const entry of entries) {
 
         // 3. Build a notification event for this user
-        const notificationEvent = {
-            eventId: randomUUID(),
-            type: "NOTIFICATION_REQUESTED",
-            waitlistId: entry.id,
-            userId: entry.user_id,
-            bookId: event.bookId,
-            title: event.title,
-            author: event.author,
-            requestedAt: new Date().toISOString()
-        };
+       const notificationEvent = {
+    eventId: randomUUID(),
+    type: "NOTIFICATION_REQUESTED",
+    waitlistId: entry.id,
+    userId: entry.user_id,
+    bookId: event.bookId,
+    title: event.title,
+    message: `The book "${event.title}" by ${event.author} is now available.`,
+    requestedAt: new Date().toISOString()
+};
 
         // 4. Publish the notification event
         await publishEvent(
