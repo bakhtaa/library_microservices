@@ -5,7 +5,7 @@ const path = require("path");
 
 const borrowHandler = require("./src/grpc/borrow.handler");
 const { initializeDatabase } = require("./src/config/database");
-
+const { connectProducer } = require("./src/kafka/producer");
 // Load Borrow proto
 const borrowProtoPath = path.join(
     __dirname,
@@ -30,7 +30,8 @@ async function main() {
 
     // 1. Initialize database
     await initializeDatabase();
-
+    // 2. Connect Kafka Producer
+await connectProducer();
     // 2. Create gRPC server
     const server = new grpc.Server();
 
