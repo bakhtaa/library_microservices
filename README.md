@@ -7,6 +7,12 @@ Ce README constitue un partage des différents problèmes rencontrés, des réfl
 Les idées et les notes présentées ne sont pas encore entièrement structurées : elles suivent principalement le déroulement du développement et les difficultés rencontrées au fur et à mesure.
 
 L'ensemble de ces éléments sera prochainement organisé et approfondi dans un rapport détaillé. Le README sera également amélioré afin de proposer une documentation plus claire, structurée et facile à suivre.
+## English_Version: 
+This README serves as a collection of the various issues encountered, thoughts, and solutions explored during the design and development of the project.
+
+The ideas and notes presented are not yet fully structured; they mainly follow the development process and document the challenges encountered along the way.
+
+All these elements will be organized and further developed in a detailed report in the near future. The README will also be improved to provide clearer, more structured, and easier-to-follow documentation.
 
 ## 1. Présentation du projet
 1. Quel problème réel ce projet résout-il ?
@@ -5528,30 +5534,30 @@ This scenario demonstrates several microservice architecture principles:
 
 ##Final Test Workflow End-To-End Test from return borrow to notify user 
 ![alt text](image.png) 
-##What happens After a book is Returned?
-1)BORROW_RETURNED published by BorrowService.
+## What happens After a book is Returned?
+## 1)BORROW_RETURNED published by BorrowService.
 ![alt text](image-18.png)
 ![alt text](image-19.png)
 
-2)BORROW_RETURNED consumed by BookService.
+## 2)BORROW_RETURNED consumed by BookService.
 ![alt text](image-20.png)
 
-3)If BORROW_RETURNED is consumed, publish BOOK_AVAILABLE.
+## 3)If BORROW_RETURNED is consumed, publish BOOK_AVAILABLE.
 ![alt text](image-21.png)
 ![alt text](image-22.png)
 
-4)BOOK_AVAILABLE consumed by WaitlistService.
+## 4)BOOK_AVAILABLE consumed by WaitlistService.
 ![alt text](image-23.png)
 
-5)If BOOK_AVAILABLE is consumed, publish NOTIFICATION_REQUESTED.
+## 5)If BOOK_AVAILABLE is consumed, publish NOTIFICATION_REQUESTED.
 ![alt text](image-24.png)
 NOTIFICATION_REQUESTED published by WaitlistService.
 ![alt text](image-25.png)
 
-6)NOTIFICATION_REQUESTED consumed by NotificationService.
+## 6)NOTIFICATION_REQUESTED consumed by NotificationService.
 ![alt text](image-26.png)
 End of asynchronous Kafka communication.
-7)NotificationService sends notification via HTTP POST call.
+## 7)NotificationService sends notification via HTTP POST call.
 
 
 whole workflow in a sequence diagram:
@@ -5565,7 +5571,7 @@ whole workflow in a sequence diagram:
 
 
 still continued (...)
-what to add?:
+## what to add?:
 implements gmail provider in the notification service
 adds schedueler notifier reminder to remind users of the return date
 adds notifications for compaingn days 
