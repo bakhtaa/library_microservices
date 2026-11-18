@@ -31,6 +31,7 @@ const borrowHandler = {
             );
 
             callback(null, result);
+            
 
         } catch (error) {
             console.error("ReturnBook handler error:", error);

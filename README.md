@@ -5518,7 +5518,56 @@ This scenario demonstrates several microservice architecture principles:
 ![alt text](image-10.png)
 ![alt text](image-11.png)
 ![alt text](image-12.png)
-\## Author
+
+##Final Test Workflow End-To-End Test from return borrow to notify user 
+![alt text](image.png) 
+##What happens After a book is Returned?
+1)BORROW_RETURNED published by BorrowService.
+![alt text](image-18.png)
+![alt text](image-19.png)
+
+2)BORROW_RETURNED consumed by BookService.
+![alt text](image-20.png)
+
+3)If BORROW_RETURNED is consumed, publish BOOK_AVAILABLE.
+![alt text](image-21.png)
+![alt text](image-22.png)
+
+4)BOOK_AVAILABLE consumed by WaitlistService.
+![alt text](image-23.png)
+
+5)If BOOK_AVAILABLE is consumed, publish NOTIFICATION_REQUESTED.
+![alt text](image-24.png)
+NOTIFICATION_REQUESTED published by WaitlistService.
+![alt text](image-25.png)
+
+6)NOTIFICATION_REQUESTED consumed by NotificationService.
+![alt text](image-26.png)
+End of asynchronous Kafka communication.
+7)NotificationService sends notification via HTTP POST call.
+
+
+whole workflow in a sequence diagram:
+
+![alt text](mermaid-diagram.png)
+
+
+
+
+
+
+
+still continued (...)
+what to add?:
+implements gmail provider in the notification service
+adds schedueler notifier reminder to remind users of the return date
+adds notifications for compaingn days 
+implements the keyCloak auth server to the api-gateway
+adds the front
+make a report of the whole project
+
+
+## Author
 
 Bakhta Nairouz Ben Hadj Slama
 

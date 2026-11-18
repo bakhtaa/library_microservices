@@ -34,6 +34,7 @@ function getUser(userId) {
             }
         );
     });
+    
 }
 
 module.exports = {
