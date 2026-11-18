@@ -1,5 +1,12 @@
 # Library Microservices System
 # Système de gestion de bibliothèque — Architecture Microservices
+## Introduction
+
+Ce README constitue un partage des différents problèmes rencontrés, des réflexions et des solutions explorées durant la conception et le développement du projet.
+
+Les idées et les notes présentées ne sont pas encore entièrement structurées : elles suivent principalement le déroulement du développement et les difficultés rencontrées au fur et à mesure.
+
+L'ensemble de ces éléments sera prochainement organisé et approfondi dans un rapport détaillé. Le README sera également amélioré afin de proposer une documentation plus claire, structurée et facile à suivre.
 
 ## 1. Présentation du projet
 1. Quel problème réel ce projet résout-il ?
