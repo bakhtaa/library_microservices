@@ -9,7 +9,7 @@ Conception et développement d'une application distribuée de gestion de bibliot
 
 -Intégration d'Apache Kafka pour la communication événementielle asynchrone, avec implémentation de Producers, Consumers et Consumer Groups.
 
--Développement de workflows métier événementiels pour automatiser les retours de livres, la gestion des disponibilités et les notifications aux utilisateurs en attente.
+-Développement de workflows métier événementiels pour automatiser la mise à jour de la disponibilité des livres après leur retour et déclencher les notifications aux utilisateurs en attente.
 
 -Mise en place d'une API Gateway avec Apollo GraphQL, centralisant l'accès aux microservices via des resolvers et des clients gRPC.
 
