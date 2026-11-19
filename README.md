@@ -1,7 +1,22 @@
 # Library Microservices System 
 # Système de gestion de bibliothèque — Architecture Microservices
 ## Introduction
+Conception et développement d'une application distribuée de gestion de bibliothèque basée sur une architecture microservices.
 
+-Conception d'une architecture composée de cinq microservices indépendants : User, Book, Borrow, Waitlist et Notification, chacun disposant de sa propre base de données SQLite.
+
+-Implémentation de la communication interservices synchrone avec gRPC et Protocol Buffers.
+
+-Intégration d'Apache Kafka pour la communication événementielle asynchrone, avec implémentation de Producers, Consumers et Consumer Groups.
+
+-Développement de workflows métier événementiels pour automatiser les retours de livres, la gestion des disponibilités et les notifications aux utilisateurs en attente.
+
+-Mise en place d'une API Gateway avec Apollo GraphQL, centralisant l'accès aux microservices via des resolvers et des clients gRPC.
+
+-Intégration de Keycloak pour la gestion centralisée des identités et l'authentification basée sur OAuth 2.0, OpenID Connect et JWT.
+
+-Conteneurisation des services avec Docker, création d'images indépendantes et configuration des communications via un réseau Docker dédié.
+## Note
 Ce README constitue un partage des différents problèmes rencontrés, des réflexions et des solutions explorées durant la conception et le développement du projet.
 
 Les idées et les notes présentées ne sont pas encore entièrement structurées : elles suivent principalement le déroulement du développement et les difficultés rencontrées au fur et à mesure.
@@ -5571,6 +5586,8 @@ whole workflow in a sequence diagram:
 
 
 still continued (...)
+![alt text](image-27.png)
+![alt text](image-28.png)
 ## what to add?:
 implements gmail provider in the notification service
 adds schedueler notifier reminder to remind users of the return date
