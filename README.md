@@ -42,7 +42,7 @@ Elle rencontre plusieurs problèmes :
 Notre application apporte une réponse à ces problèmes.
 
 
-### 1.1. Problématique : concevoir un système distribué de gestion de bibliothèque
+### 1.1. Problématique : 
 
 À première vue, un système de gestion de bibliothèque peut sembler relativement simple : les utilisateurs doivent pouvoir consulter un catalogue, rechercher des livres, emprunter des ouvrages et les retourner.
 
@@ -60,7 +60,7 @@ Ce projet explore comment répartir ces responsabilités entre plusieurs service
 
 L'objectif n'est pas simplement de diviser une application en plusieurs petits composants. Il s'agit de comprendre comment ces services peuvent communiquer efficacement, exposer une interface unifiée aux clients et collaborer pour réaliser des opérations métier complètes.
 
-Cette réflexion nous conduit à adopter une architecture microservices, reposant sur plusieurs technologies de communication, chacune répondant à un besoin architectural spécifique.
+Cette réflexion nous conduit à adopter une architecture microservices: concevoir un système distribué de gestion de bibliothèque, reposant sur plusieurs technologies de communication.
 
 ---
 # Library Management System — Microservices Architecture
